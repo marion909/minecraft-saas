@@ -97,13 +97,33 @@ heraus.
 
 Jeder Schritt prüft, ob er schon erledigt ist. Nach einem Abbruch also
 einfach erneut starten. Die `.env` wird dabei **nicht** überschrieben; die
-Geheimnisse bleiben. Zum Aktualisieren auf einen neuen Stand reicht:
+Geheimnisse bleiben, und Domain, Hostnamen und ACME-Adresse liest das
+Skript daraus zurück statt erneut zu fragen.
+
+Zum Aktualisieren auf einen neuen Stand reicht deshalb:
 
 ```bash
 sudo ./deploy/setup.sh
 ```
 
 Das holt den aktuellen `main`, baut neu und startet die Dienste durch.
+
+**Nicht von Hand bauen.** `pnpm` kommt von corepack, und corepack legt
+seinen Cache unter `$HOME` an — für die Dienstkonten ist das
+`/opt/mc-saas`, wo sie nicht schreiben dürfen. Ein `sudo -u mcpanel pnpm
+build` scheitert also an `EACCES`. Gebaut wird als root, und danach muss
+`.next` dem Panel gehören, weil `next start` dort seinen Cache schreibt:
+
+```bash
+sudo pnpm build
+sudo chown -R root:mcsaas   /opt/mc-saas/app
+sudo chmod -R g+rX          /opt/mc-saas/app
+sudo chown -R mcpanel:mcsaas /opt/mc-saas/app/.next
+sudo systemctl restart mc-panel
+```
+
+Genau diese Reihenfolge macht das Skript in Schritt 13 — noch ein Grund,
+es einfach laufen zu lassen.
 
 ## Nach dem Skript
 

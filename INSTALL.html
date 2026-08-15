@@ -648,8 +648,13 @@ sudo docker ps --format '{{.Names}} {{.Ports}}'
 zpool list
 zfs list -o name,used,quota
 
-<span class="c"># Aktualisieren auf einen neueren Stand: derselbe Befehl wie beim ersten Mal</span>
+<span class="c"># Aktualisieren auf einen neueren Stand: derselbe Befehl wie beim ersten Mal.</span>
+<span class="c"># Nach der Domain fragt er nicht noch einmal, die liest er aus der .env.</span>
 sudo bash ~/setup.sh</code></pre>
+      <div class="callout risk">
+        <strong>Nicht von Hand bauen.</strong>
+        <span><code>pnpm</code> kommt von corepack, und corepack legt seinen Cache unter <code>$HOME</code> an — für die Dienstkonten ist das <code>/opt/mc-saas</code>, wo sie nicht schreiben dürfen. Ein <code>sudo -u mcpanel pnpm build</code> scheitert deshalb an <code>EACCES</code>. Gebaut wird als root, und danach muss <code>.next</code> dem Panel gehören, weil <code>next start</code> dort seinen Cache schreibt. Das Skript macht beides in der richtigen Reihenfolge.</span>
+      </div>
       <div class="callout risk">
         <strong>Nach jedem Kernel-Update kontrolliert neu starten.</strong>
         <span>Ein neuer Kernel ohne passendes ZFS-Modul heißt: Nach dem Neustart ist der Pool nicht da, und kein Server startet. Deshalb nicht blind automatisch neu starten lassen, sondern nach dem Reboot einmal <code>zpool status</code> ansehen.</span>

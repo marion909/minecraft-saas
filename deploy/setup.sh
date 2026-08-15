@@ -107,8 +107,31 @@ preflight() {
 # ---------------------------------------------------------------------------
 # 02 Angaben einsammeln
 # ---------------------------------------------------------------------------
+# Einen Wert aus der bestehenden .env lesen, ohne die Datei auszuführen.
+env_value() {
+  [ -f "$ENV_FILE" ] || return 0
+  sed -n "s/^$1=\"\{0,1\}\([^\"]*\)\"\{0,1\}$/\1/p" "$ENV_FILE" | head -1
+}
+
 gather_config() {
   step "Angaben einsammeln"
+
+  # Beim zweiten Lauf stehen die Antworten schon in der .env. Erneut danach
+  # zu fragen wäre nicht nur lästig — ein Vertipper legte ein zweites
+  # Zertifikat an und ließe das Panel unter der alten Adresse ins Leere
+  # laufen. `ask` überspringt jede Variable, die schon gesetzt ist.
+  if [ -f "$ENV_FILE" ]; then
+    PANEL_HOST="${PANEL_HOST:-$(env_value PANEL_HOST)}"
+    ACME_EMAIL="${ACME_EMAIL:-$(env_value ACME_EMAIL)}"
+    MC_HOST="${MC_HOST:-$(env_value NODE_PUBLIC_HOST)}"
+    DOMAIN="${DOMAIN:-$(env_value SETUP_DOMAIN)}"
+    # Ältere Installationen kennen SETUP_DOMAIN noch nicht.
+    [ -n "$DOMAIN" ] || DOMAIN="${PANEL_HOST#*.}"
+
+    if [ -n "$PANEL_HOST" ] && [ -n "$MC_HOST" ] && [ -n "$ACME_EMAIL" ]; then
+      skip "Angaben aus $ENV_FILE übernommen"
+    fi
+  fi
 
   ask DOMAIN     "Deine Domain (z. B. neuhauser.app)"
   ask PANEL_HOST "Hostname des Panels" "panel.$DOMAIN"
@@ -636,6 +659,8 @@ MAIL_FROM="noreply@${DOMAIN}"
 
 PANEL_HOST="${PANEL_HOST}"
 ACME_EMAIL="${ACME_EMAIL}"
+# Damit ein erneuter Lauf nicht wieder nach der Domain fragt.
+SETUP_DOMAIN="${DOMAIN}"
 
 # Eckdaten dieses Hosts, ermittelt beim Einrichten.
 NODE_TOTAL_MEMORY_MB=${MEM_MB}
