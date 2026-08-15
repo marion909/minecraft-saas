@@ -613,7 +613,7 @@ cd /opt/mc-saas/app/deploy &amp;&amp; sudo docker compose -f docker-compose.prod
 <span class="c"># Kopieren, im Browser öffnen, fertig bestätigt.</span></code></pre>
       <p>Danach zum Admin machen — bewusst über die Shell und nicht über das Panel, sonst wäre die Admin-Rolle über die Anwendung selbst erreichbar:</p>
       <pre><code>cd /opt/mc-saas/app
-sudo -u mcpanel pnpm tsx scripts/promote-admin.ts DEINE@MAIL</code></pre>
+sudo -u mcpanel node scripts/promote-admin.ts DEINE@MAIL</code></pre>
       <p>Neu anmelden, dann steht <code>/admin</code> offen.</p>
     </section>
 

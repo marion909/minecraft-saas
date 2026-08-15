@@ -1,13 +1,17 @@
 /**
  * Macht ein bestehendes Konto zum Admin.
  *
- *   pnpm tsx scripts/promote-admin.ts du@example.com
+ *   node scripts/promote-admin.ts du@example.com
  *
  * Absichtlich ein CLI-Schritt und kein UI-Flow: Der erste Admin muss von
  * jemandem mit Shell-Zugang gesetzt werden, sonst wäre die Rolle über das
  * Panel selbst erreichbar.
+ *
+ * Läuft ohne pnpm und ohne tsx, direkt über Node — wie der Agent. Deshalb
+ * endet der Import auf .ts und nicht auf .js: Node löst den Bezeichner
+ * wörtlich auf, eine client.js gibt es nicht.
  */
-import { createClient } from "../prisma/client.js";
+import { createClient } from "../prisma/client.ts";
 
 const db = createClient();
 
@@ -15,7 +19,7 @@ async function main() {
   const email = process.argv[2];
 
   if (!email) {
-    console.error("Aufruf: pnpm tsx scripts/promote-admin.ts <e-mail>");
+    console.error("Aufruf: node scripts/promote-admin.ts <e-mail>");
     process.exitCode = 1;
     return;
   }

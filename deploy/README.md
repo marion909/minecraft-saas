@@ -132,7 +132,7 @@ Zum Admin machen:
 
 ```bash
 cd /opt/mc-saas/app
-sudo -u mcpanel pnpm tsx scripts/promote-admin.ts DEINE@MAIL
+sudo -u mcpanel node scripts/promote-admin.ts DEINE@MAIL
 ```
 
 ## Betrieb

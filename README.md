@@ -195,7 +195,7 @@ Danach auf <http://localhost:3000> registrieren. Der Bestätigungslink wird
 Erst registrieren und bestätigen, dann:
 
 ```bash
-pnpm tsx scripts/promote-admin.ts du@example.com
+node scripts/promote-admin.ts du@example.com
 ```
 
 Bewusst über die Shell und nicht über das Panel — sonst wäre die Admin-Rolle

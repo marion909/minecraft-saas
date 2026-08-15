@@ -1,6 +1,6 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 
-import { PrismaClient } from "../src/generated/prisma/client.js";
+import { PrismaClient } from "../src/generated/prisma/client.ts";
 
 /**
  * Client für Skripte, die außerhalb von Next.js laufen (Seed, CLI-Werkzeuge).

@@ -8,7 +8,7 @@
  *
  * Überschreiben geht über die NODE_*-Variablen in der .env.
  */
-import { createClient } from "./client.js";
+import { createClient } from "./client.ts";
 
 const db = createClient();
 
