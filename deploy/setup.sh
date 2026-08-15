@@ -446,6 +446,27 @@ fs.inotify.max_user_watches = 524288
 EOF
   sysctl --system >/dev/null
   ok "sysctl-Werte gesetzt"
+
+  # Ganz ohne Swap trifft der OOM-Killer im Zweifel Postgres statt einen
+  # Spielserver. Mit swappiness=1 wird er praktisch nie angefasst, fängt
+  # aber Spitzen ab. Eine Installation mit eigener Partitionierung legt
+  # keinen an, deshalb hier.
+  #
+  # Liegt nur, weil die Wurzel ext4 ist: Eine Auslagerungsdatei auf ZFS
+  # kann den Kernel verklemmen.
+  if [ -n "$(swapon --show --noheadings 2>/dev/null)" ]; then
+    skip "Swap vorhanden"
+  elif [ "$(stat -fc %T / 2>/dev/null)" = "zfs" ]; then
+    warn "Wurzeldateisystem ist ZFS — keine Auslagerungsdatei angelegt (Verklemmungsgefahr)."
+  else
+    fallocate -l 8G /swap.img 2>/dev/null ||
+      dd if=/dev/zero of=/swap.img bs=1M count=8192 status=none
+    chmod 600 /swap.img
+    mkswap /swap.img >/dev/null
+    swapon /swap.img
+    grep -q '^/swap.img' /etc/fstab || printf '/swap.img none swap sw 0 0\n' >> /etc/fstab
+    ok "8 GB Auslagerungsdatei angelegt"
+  fi
 }
 
 # ---------------------------------------------------------------------------

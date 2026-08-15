@@ -20,7 +20,7 @@ Downloads.
 | 04 | **ZFS-Pool anlegen — löscht das gewählte Gerät** |
 | 05 | ZFS-Cache deckeln, damit er den JVMs keinen Speicher wegnimmt |
 | 06 | Docker, Log-Rotation, `live-restore`, Netz `mc-net` |
-| 07 | `vm.swappiness=1`, `vm.max_map_count`, Verbindungsgrenzen |
+| 07 | `vm.swappiness=1`, `vm.max_map_count`, Verbindungsgrenzen, 8 GB Auslagerungsdatei |
 | 08 | ufw: 22, 80, 443, 25565 — sonst nichts |
 | 09 | SSH auf Schlüssel umstellen (nur wenn einer hinterlegt ist), fail2ban |
 | 10 | Konten `mcagent` (Docker + ZFS) und `mcpanel`, `zfs allow` |

@@ -1,0 +1,712 @@
+<title>Von der leeren Platte zum Server</title>
+<style>
+  :root {
+    --ground: #F3F6F4;
+    --surface: #FFFFFF;
+    --surface-2: #E7ECE8;
+    --ink: #131B17;
+    --ink-2: #44514A;
+    --ink-3: #76847B;
+    --rule: #D2DAD4;
+    --rule-2: #BCC7C0;
+    --accent: #2C6B4C;
+    --accent-soft: #E1EDE6;
+    --warn: #8E640F;
+    --warn-soft: #F4EAD5;
+    --crit: #93402F;
+    --crit-soft: #F5E2DD;
+    --shadow: 0 1px 2px rgba(19,27,23,.05), 0 8px 24px -18px rgba(19,27,23,.35);
+
+    --f-display: "Iowan Old Style", Charter, "Palatino Linotype", Palatino, Georgia, ui-serif, serif;
+    --f-body: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --f-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0F1412; --surface: #161D19; --surface-2: #1E2722;
+      --ink: #DDE5DF; --ink-2: #99A79F; --ink-3: #72817A;
+      --rule: #28322C; --rule-2: #37443C;
+      --accent: #64B085; --accent-soft: #19291F;
+      --warn: #D0A054; --warn-soft: #2B2416;
+      --crit: #D08069; --crit-soft: #2C1C17;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -18px rgba(0,0,0,.8);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0F1412; --surface: #161D19; --surface-2: #1E2722;
+    --ink: #DDE5DF; --ink-2: #99A79F; --ink-3: #72817A;
+    --rule: #28322C; --rule-2: #37443C;
+    --accent: #64B085; --accent-soft: #19291F;
+    --warn: #D0A054; --warn-soft: #2B2416;
+    --crit: #D08069; --crit-soft: #2C1C17;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -18px rgba(0,0,0,.8);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+    padding: 0 0 8rem;
+  }
+
+  .wrap {
+    display: grid;
+    grid-template-columns: 1fr;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+  }
+  @media (min-width: 1080px) {
+    .wrap { grid-template-columns: 210px minmax(0, 1fr); gap: 4rem; padding: 0 2.5rem; }
+  }
+
+  .masthead {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--rule);
+    padding: 4.5rem 0 2.25rem;
+    margin-bottom: 3rem;
+    display: flex; flex-direction: column; gap: 1rem;
+  }
+  .eyebrow {
+    font-family: var(--f-mono); font-size: .7rem; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+  h1 {
+    font-family: var(--f-display);
+    font-size: clamp(2.4rem, 6vw, 3.6rem);
+    line-height: 1.06; letter-spacing: -.02em; font-weight: 600;
+    text-wrap: balance; margin: 0;
+  }
+  .standfirst { font-size: 1.075rem; color: var(--ink-2); max-width: 62ch; margin: 0; }
+  .meta-row {
+    display: flex; flex-wrap: wrap; gap: .5rem 1.5rem;
+    font-family: var(--f-mono); font-size: .72rem; color: var(--ink-3);
+    letter-spacing: .04em; padding-top: .5rem;
+  }
+  .meta-row b { color: var(--ink-2); font-weight: 500; }
+
+  nav.rail { display: none; }
+  @media (min-width: 1080px) {
+    nav.rail {
+      display: block; position: sticky; top: 2rem; align-self: start;
+      max-height: calc(100vh - 4rem); overflow-y: auto; padding-bottom: 2rem;
+    }
+    nav.rail ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .1rem; }
+    nav.rail a {
+      display: flex; gap: .6rem; font-family: var(--f-mono); font-size: .74rem;
+      color: var(--ink-3); text-decoration: none; padding: .3rem 0; border-radius: 2px;
+    }
+    nav.rail a:hover { color: var(--accent); }
+    nav.rail a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    nav.rail a .n { color: var(--rule-2); font-variant-numeric: tabular-nums; flex: none; }
+    nav.rail .grp {
+      font-family: var(--f-mono); font-size: .66rem; letter-spacing: .12em;
+      text-transform: uppercase; color: var(--rule-2); padding: 1.1rem 0 .25rem;
+    }
+    nav.rail .grp:first-child { padding-top: 0; }
+  }
+
+  main { min-width: 0; display: flex; flex-direction: column; gap: 3.5rem; }
+  section { display: flex; flex-direction: column; gap: 1.1rem; scroll-margin-top: 2rem; }
+
+  .phase-head {
+    grid-column: 1 / -1;
+    display: flex; flex-direction: column; gap: .3rem;
+    padding-top: 1.5rem;
+  }
+  .phase-head .pk {
+    font-family: var(--f-mono); font-size: .68rem; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--accent);
+  }
+  .phase-head h2 {
+    font-family: var(--f-display); font-size: 2rem; line-height: 1.15;
+    letter-spacing: -.015em; font-weight: 600; margin: 0; border: none; padding: 0;
+  }
+  .phase-head .pmeta { font-size: .88rem; color: var(--ink-3); }
+
+  h2 {
+    font-family: var(--f-display); font-size: 1.65rem; line-height: 1.2;
+    letter-spacing: -.012em; font-weight: 600; margin: 0;
+    padding-bottom: .7rem; border-bottom: 1px solid var(--rule); text-wrap: balance;
+  }
+  h3 {
+    font-family: var(--f-body); font-size: .82rem; font-weight: 650;
+    letter-spacing: .04em; text-transform: uppercase; color: var(--ink-2); margin: .9rem 0 0;
+  }
+  p { margin: 0; max-width: 68ch; }
+  p + p { margin-top: -.2rem; }
+  a { color: var(--accent); }
+
+  ul.list, ol.list { margin: 0; padding-left: 1.15rem; display: flex; flex-direction: column; gap: .45rem; max-width: 68ch; }
+  ul.list li::marker, ol.list li::marker { color: var(--rule-2); }
+
+  code {
+    font-family: var(--f-mono); font-size: .855em; background: var(--surface-2);
+    padding: .1em .35em; border-radius: 3px; color: var(--ink);
+  }
+  pre {
+    margin: 0; background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 5px; padding: 1rem 1.1rem; overflow-x: auto; box-shadow: var(--shadow);
+  }
+  pre code { background: none; padding: 0; font-size: .78rem; line-height: 1.75; color: var(--ink-2); white-space: pre; }
+  pre .c { color: var(--ink-3); font-style: italic; }
+  pre .p { color: var(--accent); }
+
+  .scroller { overflow-x: auto; border: 1px solid var(--rule); border-radius: 5px; background: var(--surface); box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; font-size: .875rem; }
+  th, td { text-align: left; padding: .68rem .9rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  thead th {
+    font-family: var(--f-mono); font-size: .68rem; text-transform: uppercase;
+    letter-spacing: .1em; color: var(--ink-3); font-weight: 500;
+    background: var(--surface-2); white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td code { font-size: .8em; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .chip {
+    display: inline-block; font-family: var(--f-mono); font-size: .66rem;
+    letter-spacing: .07em; text-transform: uppercase; padding: .18em .5em;
+    border-radius: 3px; white-space: nowrap; font-weight: 500;
+  }
+  .chip.crit { background: var(--crit-soft); color: var(--crit); }
+  .chip.warn { background: var(--warn-soft); color: var(--warn); }
+  .chip.ok   { background: var(--accent-soft); color: var(--accent); }
+
+  .step-head { display: flex; align-items: baseline; gap: .8rem; border-bottom: 1px solid var(--rule); padding-bottom: .7rem; }
+  .step-head .sn {
+    font-family: var(--f-mono); font-size: .78rem; font-weight: 600;
+    color: var(--accent); font-variant-numeric: tabular-nums; flex: none;
+  }
+  .step-head h2 { border: none; padding: 0; }
+
+  .callout {
+    border-left: 2px solid var(--accent); background: var(--accent-soft);
+    padding: .9rem 1.1rem; border-radius: 0 4px 4px 0; font-size: .89rem;
+    color: var(--ink-2); max-width: 70ch; display: flex; flex-direction: column; gap: .4rem;
+  }
+  .callout strong { color: var(--ink); font-weight: 620; }
+  .callout.risk { border-left-color: var(--warn); background: var(--warn-soft); }
+  .callout.stop { border-left-color: var(--crit); background: var(--crit-soft); }
+
+  /* Installer-Bildschirme: was steht da, was klickst du */
+  .screens { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--rule); border-radius: 5px; overflow: hidden; background: var(--surface); box-shadow: var(--shadow); }
+  .screen { display: grid; grid-template-columns: 1fr; gap: .35rem; padding: .9rem 1.1rem; border-bottom: 1px solid var(--rule); }
+  @media (min-width: 720px) { .screen { grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 0 1.5rem; align-items: baseline; } }
+  .screen:last-child { border-bottom: none; }
+  .screen .sname { font-family: var(--f-mono); font-size: .76rem; color: var(--ink); }
+  .screen .sdo { font-size: .875rem; color: var(--ink-2); }
+  .screen .sdo em { color: var(--ink-3); font-style: normal; display: block; font-size: .95em; margin-top: .15rem; }
+
+  .endnote { grid-column: 1 / -1; border-top: 1px solid var(--rule); margin-top: 4rem; padding-top: 1.25rem; font-family: var(--f-mono); font-size: .72rem; color: var(--ink-3); letter-spacing: .03em; }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Schritt für Schritt · Ubuntu und das Panel</div>
+    <h1>Von der leeren Platte zum Server</h1>
+    <p class="standfirst">Ubuntu Server auf die Maschine, dann das SaaS darauf. Ein einziges Mal hängst du Monitor und Tastatur an — ab Schritt 08 läuft alles über SSH, und der Rechner steht ohne Bildschirm im Regal.</p>
+    <div class="meta-row">
+      <span><b>Dauer</b> ca. 60 Minuten</span>
+      <span><b>Davon Wartezeit</b> ca. 35</span>
+      <span><b>Nötig</b> USB-Stick ab 4 GB, Monitor und Tastatur für Schritt 04–07</span>
+    </div>
+  </header>
+
+  <nav class="rail" aria-label="Inhalt">
+    <ol>
+      <li class="grp">Am Mac</li>
+      <li><a href="#s01"><span class="n">01</span> ISO holen</a></li>
+      <li><a href="#s02"><span class="n">02</span> Stick schreiben</a></li>
+      <li><a href="#s03"><span class="n">03</span> Schlüssel zu GitHub</a></li>
+      <li class="grp">Am Server</li>
+      <li><a href="#s04"><span class="n">04</span> Booten</a></li>
+      <li><a href="#s05"><span class="n">05</span> Installer</a></li>
+      <li><a href="#s06"><span class="n">06</span> Platte aufteilen</a></li>
+      <li><a href="#s07"><span class="n">07</span> Konto und SSH</a></li>
+      <li class="grp">Ab hier ohne Bildschirm</li>
+      <li><a href="#s08"><span class="n">08</span> Erste Verbindung</a></li>
+      <li><a href="#s09"><span class="n">09</span> Feste Adresse</a></li>
+      <li><a href="#s10"><span class="n">10</span> Das Skript</a></li>
+      <li class="grp">Ins Internet</li>
+      <li><a href="#s11"><span class="n">11</span> DNS</a></li>
+      <li><a href="#s12"><span class="n">12</span> Router</a></li>
+      <li><a href="#s13"><span class="n">13</span> Erster Admin</a></li>
+      <li><a href="#s14"><span class="n">14</span> Erster Server</a></li>
+      <li class="grp">Danach</li>
+      <li><a href="#betrieb">Betrieb</a></li>
+      <li><a href="#hilfe">Wenn es klemmt</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <section id="ueberblick">
+      <h2>Was gleich passiert</h2>
+      <p>Vier Abschnitte. Der erste läuft an deinem Mac, der zweite am Server mit Bildschirm, der dritte über SSH, der vierte im Router und beim DNS-Anbieter.</p>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Abschnitt</th><th>Wo</th><th>Was dabei herauskommt</th><th>Dauer</th></tr></thead>
+          <tbody>
+            <tr><td>01–03</td><td>Mac</td><td>Bootfähiger Stick, dein Schlüssel bei GitHub</td><td class="num">15 min</td></tr>
+            <tr><td>04–07</td><td>Server, mit Monitor</td><td>Ubuntu läuft, SSH offen, Platte richtig aufgeteilt</td><td class="num">25 min</td></tr>
+            <tr><td>08–10</td><td>SSH vom Mac</td><td>Das ganze SaaS installiert und gestartet</td><td class="num">20 min</td></tr>
+            <tr><td>11–14</td><td>DNS, Router, Browser</td><td>Aus dem Internet erreichbar, erster Server läuft</td><td class="num">15 min</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout">
+        <strong>Headless heißt hier: ab Schritt 08 nie wieder ein Bildschirm.</strong>
+        <span>Für die Installation selbst brauchst du einmal Monitor und Tastatur — du musst ins BIOS und durch den Installer. Danach kannst du beides abziehen; Ubuntu Server hat ohnehin keine Oberfläche. Willst du auch die Installation ohne Bildschirm fahren, steht der Weg ganz unten unter <a href="#hilfe">Wenn es klemmt</a>. Für das erste Mal rate ich davon ab: Ein blinder Installationslauf sagt dir nicht, woran er gescheitert ist.</span>
+      </div>
+    </section>
+
+    <div class="phase-head">
+      <div class="pk">Abschnitt 1</div>
+      <h2>Am Mac vorbereiten</h2>
+      <div class="pmeta">Drei Schritte, danach ist der Server dran.</div>
+    </div>
+
+    <!-- 01 -->
+    <section id="s01">
+      <div class="step-head"><span class="sn">01</span><h2>Ubuntu Server holen</h2></div>
+      <p><strong>Ubuntu Server 24.04 LTS</strong>, die Variante ohne Desktop. Nicht Ubuntu Desktop, nicht 25.10 — 24.04 ist bis 2029 versorgt, und der ZFS-Stack darauf ist lange durchgeschüttelt.</p>
+      <p>Auf <a href="https://ubuntu.com/download/server">ubuntu.com/download/server</a> die Datei <code>ubuntu-24.04.x-live-server-amd64.iso</code> laden, rund 2,5 GB.</p>
+      <div class="callout risk">
+        <strong>Nicht die ARM-Variante nehmen.</strong>
+        <span>Dein Mac ist vermutlich ein Apple Silicon, die Download-Seite bietet deshalb womöglich <code>arm64</code> an. Der Server hat einen Intel-Prozessor und braucht <strong>amd64</strong>. Steht im Dateinamen.</span>
+      </div>
+    </section>
+
+    <!-- 02 -->
+    <section id="s02">
+      <div class="step-head"><span class="sn">02</span><h2>USB-Stick schreiben</h2></div>
+      <p>Der bequeme Weg ist <a href="https://etcher.balena.io/">balenaEtcher</a>: ISO wählen, Stick wählen, schreiben. Über das Terminal geht es auch:</p>
+      <pre><code><span class="c"># Stick einstecken, dann seine Nummer suchen</span>
+diskutil list
+<span class="c"># Die richtige Zeile erkennst du an der Größe. Nimm den Eintrag</span>
+<span class="c"># /dev/diskN — nicht /dev/diskNs1.</span>
+
+diskutil unmountDisk /dev/diskN
+
+<span class="c"># rdiskN statt diskN ist deutlich schneller</span>
+sudo dd if=~/Downloads/ubuntu-24.04.3-live-server-amd64.iso \
+        of=/dev/rdiskN bs=4m status=progress
+
+diskutil eject /dev/diskN</code></pre>
+      <div class="callout stop">
+        <strong><code>dd</code> fragt nicht nach.</strong>
+        <span>Eine falsche Nummer schreibt über deine interne Platte oder eine angesteckte Festplatte. <code>diskutil list</code> zweimal lesen und die Größe abgleichen, bevor du Enter drückst. Im Zweifel Etcher nehmen — das zeigt dir den Namen des Sticks im Klartext an.</span>
+      </div>
+    </section>
+
+    <!-- 03 -->
+    <section id="s03">
+      <div class="step-head"><span class="sn">03</span><h2>SSH-Schlüssel bei GitHub hinterlegen</h2></div>
+      <p>Ein Umweg, der sich sofort auszahlt: Der Ubuntu-Installer kann öffentliche Schlüssel direkt von GitHub laden. Damit kommst du nach dem ersten Neustart ohne Passwort auf den Server — und musst nie ein Passwort über das Netz schicken.</p>
+      <pre><code><span class="c"># Hast du schon einen Schlüssel? Dann steht hier etwas.</span>
+ls ~/.ssh/id_ed25519.pub
+
+<span class="c"># Falls nicht, einen anlegen. Passphrase vergeben, der Schlüssel</span>
+<span class="c"># liegt danach unverschlüsselt auf der Platte.</span>
+ssh-keygen -t ed25519 -C "mac"
+
+<span class="c"># Öffentlichen Teil in die Zwischenablage</span>
+pbcopy < ~/.ssh/id_ed25519.pub</code></pre>
+      <p>Dann auf <a href="https://github.com/settings/keys">github.com/settings/keys</a> → <em>New SSH key</em> → einfügen → speichern. Titel egal.</p>
+      <div class="callout">
+        <strong>Warum über GitHub und nicht per Passwort?</strong>
+        <span>Der Installer fragt sonst nur nach einem Passwort, und dieses Passwort ist dann das Einzige, was zwischen dem Internet und deinem Server steht. Über den Schlüssel entfällt es komplett: Das Setup-Skript schaltet die Passwort-Anmeldung in Schritt 10 ab — aber nur, wenn es einen hinterlegten Schlüssel findet. Ohne Schlüssel lässt es sie an, sonst sperrst du dich selbst aus.</span>
+      </div>
+    </section>
+
+    <div class="phase-head">
+      <div class="pk">Abschnitt 2</div>
+      <h2>Installieren, mit Bildschirm</h2>
+      <div class="pmeta">Monitor und Tastatur an den Server. Das letzte Mal.</div>
+    </div>
+
+    <!-- 04 -->
+    <section id="s04">
+      <div class="step-head"><span class="sn">04</span><h2>Vom Stick booten</h2></div>
+      <ol class="list">
+        <li>Netzwerkkabel einstecken. <strong>Kabel, nicht WLAN</strong> — der Installer richtet WLAN zwar ein, aber ein Server, dessen Erreichbarkeit an einer Funkverbindung hängt, ist keine gute Idee.</li>
+        <li>Stick einstecken, einschalten, sofort die Setup-Taste drücken: meist <code>Entf</code>, bei manchen Boards <code>F2</code>. Die Meldung steht kurz im Startbild.</li>
+        <li>Im BIOS: <strong>Boot-Reihenfolge</strong> auf den USB-Stick, oder direkt das Boot-Menü nehmen (<code>F11</code> oder <code>F12</code>).</li>
+        <li>Speichern und neu starten. Im Ubuntu-Startmenü <em>Try or Install Ubuntu Server</em> wählen.</li>
+      </ol>
+      <div class="callout">
+        <strong>Secure Boot kann anbleiben.</strong>
+        <span>Ubuntu liefert das ZFS-Modul signiert mit, es lädt auch bei aktiviertem Secure Boot. Du musst im BIOS nichts abschalten.</span>
+      </div>
+    </section>
+
+    <!-- 05 -->
+    <section id="s05">
+      <div class="step-head"><span class="sn">05</span><h2>Durch den Installer</h2></div>
+      <p>Die Bildschirme in der Reihenfolge, in der sie kommen. Bedient wird mit Pfeiltasten, <code>Tab</code> und <code>Enter</code> — die Maus tut nichts.</p>
+      <div class="screens">
+        <div class="screen">
+          <div class="sname">Language</div>
+          <div class="sdo">English<em>Lass es auf Englisch. Fehlermeldungen sind so nachschlagbar, und die Anzeige hat nichts mit der Tastatur zu tun.</em></div>
+        </div>
+        <div class="screen">
+          <div class="sname">Installer update available</div>
+          <div class="sdo">Update to the new installer<em>Falls die Frage kommt: annehmen. Kostet eine Minute und spart bekannte Fehler.</em></div>
+        </div>
+        <div class="screen">
+          <div class="sname">Keyboard configuration</div>
+          <div class="sdo">Layout: <b>German</b>, Variant: German<em>Wichtig für das Passwort im nächsten Schritt: Auf einer deutschen Tastatur liegen <code>y</code> und <code>z</code> vertauscht, wenn hier English steht.</em></div>
+        </div>
+        <div class="screen">
+          <div class="sname">Choose type of install</div>
+          <div class="sdo">Ubuntu Server<em>Nicht „minimized". Die minimierte Variante spart ein paar hundert Megabyte und lässt Werkzeuge weg, die du beim Suchen brauchst.</em></div>
+        </div>
+        <div class="screen">
+          <div class="sname">Network connections</div>
+          <div class="sdo">Nichts ändern, aber die IPv4-Adresse notieren<em>Steht hinter dem Kabel-Interface, etwa <code>192.168.1.42</code>. Die brauchst du in Schritt 08.</em></div>
+        </div>
+        <div class="screen">
+          <div class="sname">Proxy / Mirror</div>
+          <div class="sdo">Beides so lassen<em>Proxy leer, Mirror wie vorgeschlagen.</em></div>
+        </div>
+        <div class="screen">
+          <div class="sname">Guided storage configuration</div>
+          <div class="sdo"><b>Custom storage layout</b><em>Der wichtigste Klick der ganzen Installation. Weiter bei Schritt 06.</em></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 06 -->
+    <section id="s06">
+      <div class="step-head"><span class="sn">06</span><h2>Die Platte aufteilen</h2></div>
+      <p>Du hast eine SSD, und sie muss beides tragen: das System und den ZFS-Pool für die Weltdaten. Deshalb legst du nur zwei Partitionen an und lässt den Rest <em>frei</em> — den holt sich ZFS später.</p>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Partition</th><th>Größe</th><th>Format</th><th>Einhängepunkt</th></tr></thead>
+          <tbody>
+            <tr><td class="num">1</td><td class="num">1 GB</td><td>EFI System Partition</td><td><code>/boot/efi</code></td></tr>
+            <tr><td class="num">2</td><td class="num">120 GB</td><td>ext4</td><td><code>/</code></td></tr>
+            <tr><td>—</td><td class="num">Rest, ca. 810 GB</td><td colspan="2"><strong>frei lassen</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>Klick für Klick</h3>
+      <ol class="list">
+        <li>Unter <em>AVAILABLE DEVICES</em> steht deine SSD. Falls dort schon Partitionen hängen: bei der Platte <em>Reformat</em> wählen, das räumt sie leer.</li>
+        <li>Auf der Platte <code>Enter</code> → <strong>Use As Boot Device</strong>. Damit legt der Installer die 1-GB-EFI-Partition selbst an. Du musst sie nicht von Hand bauen.</li>
+        <li>Jetzt steht unter der Platte eine Zeile <em>free space</em>. Darauf <code>Enter</code> → <strong>Add GPT Partition</strong>.</li>
+        <li>Size: <code>120G</code> eintippen. Format: <code>ext4</code>. Mount: <code>/</code>. Dann <em>Create</em>.</li>
+        <li>Unter der Platte bleibt eine Zeile <em>free space</em> mit rund 810 G stehen. <strong>Die rührst du nicht an.</strong></li>
+        <li><em>Done</em> → der Installer warnt, dass die Platte überschrieben wird → <em>Continue</em>.</li>
+      </ol>
+      <div class="callout risk">
+        <strong>Wenn am Ende kein <em>free space</em> übrig ist, stimmt etwas nicht.</strong>
+        <span>Dann hast du entweder den geführten Weg statt <em>Custom storage layout</em> erwischt, oder bei der Größe die Einheit vergessen und <code>120</code> statt <code>120G</code> eingetippt. Geh zurück und prüfe es — nachher fehlt der Platz für den Pool, und dann hilft nur noch verkleinern oder neu installieren.</span>
+      </div>
+      <div class="callout">
+        <strong>Warum kein LVM und keine Verschlüsselung?</strong>
+        <span>Beides bringt hier nichts ein und kostet. LVM ist eine Schicht mehr zwischen ZFS und der Platte. Verschlüsselung verlangt bei jedem Neustart eine Eingabe — auf einem Rechner ohne Bildschirm heißt das, dass er nach jedem Stromausfall stehen bleibt, bis du hingehst.</span>
+      </div>
+    </section>
+
+    <!-- 07 -->
+    <section id="s07">
+      <div class="step-head"><span class="sn">07</span><h2>Konto, SSH, fertig</h2></div>
+      <div class="screens">
+        <div class="screen">
+          <div class="sname">Profile configuration</div>
+          <div class="sdo">Name, Servername, Benutzername, Passwort<em>Servername z. B. <code>mc-host</code>. Der Benutzername wird dein SSH-Konto und hat sudo. Das Passwort brauchst du für <code>sudo</code>, nicht zum Anmelden — trotzdem eines nehmen, das du dir merkst.</em></div>
+        </div>
+        <div class="screen">
+          <div class="sname">Ubuntu Pro</div>
+          <div class="sdo">Skip for now<em>Kostenlos für Privatleute, aber du brauchst es hier nicht.</em></div>
+        </div>
+        <div class="screen">
+          <div class="sname">SSH Setup</div>
+          <div class="sdo"><b>Install OpenSSH server</b> ankreuzen<em>Ohne das kommst du nach dem Abziehen des Monitors nicht mehr auf die Maschine.</em></div>
+        </div>
+        <div class="screen">
+          <div class="sname">— derselbe Bildschirm</div>
+          <div class="sdo">Import SSH identity: <b>from GitHub</b>, dann <code>marion909</code><em>Der Installer holt deinen öffentlichen Schlüssel aus Schritt 03 und zeigt den Fingerabdruck zur Bestätigung.</em></div>
+        </div>
+        <div class="screen">
+          <div class="sname">— derselbe Bildschirm</div>
+          <div class="sdo">Allow password authentication over SSH: <b>nein</b><em>Der Haken bleibt leer. Du hast ja den Schlüssel.</em></div>
+        </div>
+        <div class="screen">
+          <div class="sname">Featured server snaps</div>
+          <div class="sdo">Nichts auswählen<em>Docker kommt später aus dem offiziellen Repo, nicht als Snap.</em></div>
+        </div>
+      </div>
+      <p>Dann läuft die Installation, etwa 10 Minuten. Am Ende <em>Reboot Now</em>, und wenn er es verlangt: <strong>Stick abziehen</strong>, sonst startet der Installer erneut.</p>
+      <div class="callout">
+        <strong>Nach dem Neustart kannst du Monitor und Tastatur abziehen.</strong>
+        <span>Ab hier passiert alles über SSH. Bevor du abziehst, sicherheitshalber die Adresse bestätigen: anmelden und <code>ip -4 addr show scope global | grep inet</code> tippen.</span>
+      </div>
+    </section>
+
+    <div class="phase-head">
+      <div class="pk">Abschnitt 3</div>
+      <h2>Ab hier ohne Bildschirm</h2>
+      <div class="pmeta">Alles Weitere läuft im Terminal deines Macs.</div>
+    </div>
+
+    <!-- 08 -->
+    <section id="s08">
+      <div class="step-head"><span class="sn">08</span><h2>Erste Verbindung</h2></div>
+      <pre><code>ssh DEINBENUTZER@192.168.1.42
+
+<span class="c"># Beim ersten Mal fragt SSH nach dem Fingerabdruck des Hosts — mit</span>
+<span class="c"># yes bestätigen. Nach einem Passwort sollte er nicht fragen.</span>
+
+<span class="c"># Angekommen? Dann erst mal alles aktualisieren.</span>
+sudo apt update &amp;&amp; sudo apt full-upgrade -y
+sudo reboot</code></pre>
+      <p>Nach dem Neustart wieder verbinden. Kurze Kontrolle, dass die Platte so aussieht wie geplant:</p>
+      <pre><code>lsblk
+<span class="c"># Erwartet: nvme0n1 mit p1 (1G, /boot/efi) und p2 (120G, /).</span>
+<span class="c"># Der Rest der Platte taucht hier nicht auf — das ist richtig so,</span>
+<span class="c"># unpartitionierter Platz hat keinen Namen.</span>
+
+sudo sgdisk -p /dev/nvme0n1 | grep "free space"
+<span class="c"># Erwartet: rund 1,7 Milliarden Sektoren, also ~810 GiB.</span></code></pre>
+      <div class="callout risk">
+        <strong>Fragt er nach einem Passwort, hat der Schlüssel nicht geklappt.</strong>
+        <span>Dann hat der Installer den Import übersprungen. Kein Drama: Mit dem Passwort anmelden und den Schlüssel nachreichen mit <code>ssh-copy-id DEINBENUTZER@192.168.1.42</code> vom Mac aus. Danach noch einmal verbinden und prüfen, dass es ohne Passwort geht — <em>bevor</em> du Schritt 10 startest. Das Skript schaltet die Passwort-Anmeldung sonst ab, während du noch keinen Schlüssel hast.</span>
+      </div>
+    </section>
+
+    <!-- 09 -->
+    <section id="s09">
+      <div class="step-head"><span class="sn">09</span><h2>Feste Adresse im Router</h2></div>
+      <p>Der Server hat seine IP per DHCP bekommen, und die kann sich nach einem Stromausfall ändern. Dann zeigt die Portweiterleitung aus Schritt 12 plötzlich auf den Drucker.</p>
+      <pre><code><span class="c"># MAC-Adresse ablesen (die Zeile "link/ether")</span>
+ip link show | grep -A1 "state UP"</code></pre>
+      <p>Im Router unter <em>DHCP</em> oder <em>Netzwerk → Geräte</em> die Reservierung setzen: diese MAC bekommt immer diese IP. Bei einer FRITZ!Box heißt der Haken <em>„Diesem Netzwerkgerät immer die gleiche IPv4-Adresse zuweisen"</em>.</p>
+      <div class="callout">
+        <strong>Warum Reservierung und keine statische Konfiguration?</strong>
+        <span>Eine im Server fest eingetragene IP funktioniert genauso — bis jemand den Router tauscht oder das Subnetz ändert. Dann ist die Maschine ohne Bildschirm nicht mehr erreichbar. Die Reservierung liegt an der Stelle, an der ohnehin alle Adressen verwaltet werden.</span>
+      </div>
+    </section>
+
+    <!-- 10 -->
+    <section id="s10">
+      <div class="step-head"><span class="sn">10</span><h2>Das Setup-Skript</h2></div>
+      <p>Ein Skript, siebzehn Schritte, etwa 15 Minuten. Es holt sich alles Weitere selbst — du brauchst das Repo vorher nicht zu klonen.</p>
+      <pre><code>curl -fsSL https://raw.githubusercontent.com/marion909/minecraft-saas/main/deploy/setup.sh -o setup.sh
+
+<span class="c"># Erst ansehen, dann ausführen. Immer, bei jedem Skript aus dem Netz.</span>
+less setup.sh
+
+sudo bash setup.sh</code></pre>
+      <h3>Was es fragt</h3>
+      <div class="screens">
+        <div class="screen">
+          <div class="sname">Deine Domain</div>
+          <div class="sdo"><code>neuhauser.app</code></div>
+        </div>
+        <div class="screen">
+          <div class="sname">Hostname des Panels</div>
+          <div class="sdo">Enter — der Vorschlag <code>panel.neuhauser.app</code> stimmt</div>
+        </div>
+        <div class="screen">
+          <div class="sname">Basis der Server-Adressen</div>
+          <div class="sdo">Enter — <code>mc.neuhauser.app</code><em>Die Server heißen später <code>meinserver.mc.neuhauser.app</code>.</em></div>
+        </div>
+        <div class="screen">
+          <div class="sname">E-Mail für die Zertifikate</div>
+          <div class="sdo">Deine Adresse<em>Geht an Let's Encrypt. Die schreiben nur, wenn ein Zertifikat nicht erneuert werden konnte.</em></div>
+        </div>
+        <div class="screen">
+          <div class="sname">810 GB auf /dev/nvme0n1 sind nicht partitioniert. Daraus eine Partition für den Pool anlegen?</div>
+          <div class="sdo"><b>Enter</b> (= ja)<em>Genau der freie Platz aus Schritt 06. Das Anlegen kann bestehende Partitionen nicht berühren.</em></div>
+        </div>
+        <div class="screen">
+          <div class="sname">Was wird der Pool?</div>
+          <div class="sdo">Enter — die eben angelegte Partition steht schon da</div>
+        </div>
+        <div class="screen">
+          <div class="sname">Zum Bestätigen LOESCHEN eingeben</div>
+          <div class="sdo"><code>LOESCHEN</code> tippen<em>Vorher die <code>lsblk</code>-Ausgabe darüber lesen: Dort muss die neue Partition mit ~810 G stehen und <strong>kein</strong> Einhängepunkt dahinter.</em></div>
+        </div>
+      </div>
+      <p>Danach läuft es durch. Am Ende steht eine Abnahme mit acht Prüfungen und eine Zusammenfassung.</p>
+      <div class="callout">
+        <strong>Abgebrochen? Einfach noch einmal starten.</strong>
+        <span>Jeder Schritt prüft zuerst, ob er schon erledigt ist. Die <code>.env</code> mit den erzeugten Geheimnissen wird nie überschrieben. Derselbe Befehl ist später auch der Weg, auf einen neueren Stand zu aktualisieren.</span>
+      </div>
+    </section>
+
+    <div class="phase-head">
+      <div class="pk">Abschnitt 4</div>
+      <h2>Ins Internet</h2>
+      <div class="pmeta">Zwei DNS-Einträge, drei Ports, dann der erste Server.</div>
+    </div>
+
+    <!-- 11 -->
+    <section id="s11">
+      <div class="step-head"><span class="sn">11</span><h2>DNS-Einträge</h2></div>
+      <pre><code><span class="c"># Öffentliche IP des Anschlusses herausfinden</span>
+curl -fsS https://api.ipify.org; echo</code></pre>
+      <p>Beim Anbieter von <code>neuhauser.app</code> zwei Einträge anlegen:</p>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Name</th><th>Typ</th><th>Ziel</th><th>Wofür</th></tr></thead>
+          <tbody>
+            <tr><td><code>panel</code></td><td>A</td><td>deine öffentliche IP</td><td>Das Panel im Browser</td></tr>
+            <tr><td><code>*.mc</code></td><td>A</td><td>dieselbe IP</td><td>Alle Server-Adressen auf einmal</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Der Stern ist kein Tippfehler. Er sorgt dafür, dass jeder neue Server sofort erreichbar ist, ohne dass du für ihn einen Eintrag anlegst — welcher Container gemeint ist, entscheidet der Router auf dem Host anhand des Hostnamens im Minecraft-Handshake.</p>
+      <div class="callout risk">
+        <strong>Wechselt deine öffentliche IP, zeigen beide Einträge ins Leere.</strong>
+        <span>Bei Privatanschlüssen ist das die Regel, meist nach jeder Zwangstrennung. Dagegen hilft DynDNS. Router können das oft nur für einen einzelnen Namen; für <code>*.mc</code> braucht es in der Regel einen kleinen Dienst auf dem Host, der die API deines DNS-Anbieters bedient. Das ist der eine Punkt, den ich noch nicht für dich erledigt habe — sag Bescheid, dann bauen wir ihn.</span>
+      </div>
+      <div class="callout stop">
+        <strong>Vorher prüfen: Hast du überhaupt eine eigene IPv4?</strong>
+        <span>Bei DS-Lite — verbreitet bei Kabelanschlüssen — teilen sich viele Kunden eine Adresse, und Portweiterleitung funktioniert für IPv4 gar nicht. Erkennbar daran, dass die WAN-Adresse im Router aus <code>100.64.0.0/10</code> stammt oder dass dort gar keine IPv4 auftaucht. Vergleich auch die Ausgabe von <code>curl api.ipify.org</code> mit dem, was der Router als WAN-IP anzeigt: Sind die verschieden, sitzt du hinter einem Provider-NAT. Dann bleiben IPv6 mit AAAA-Einträgen oder ein Tunnel über einen kleinen VPS.</span>
+      </div>
+    </section>
+
+    <!-- 12 -->
+    <section id="s12">
+      <div class="step-head"><span class="sn">12</span><h2>Portweiterleitung</h2></div>
+      <p>Genau drei Ports auf die feste IP aus Schritt 09.</p>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Port</th><th>Protokoll</th><th>Wofür</th><th></th></tr></thead>
+          <tbody>
+            <tr><td class="num">25565</td><td>TCP</td><td>Minecraft, alle Server über einen Port</td><td><span class="chip ok">Pflicht</span></td></tr>
+            <tr><td class="num">443</td><td>TCP</td><td>Das Panel</td><td><span class="chip ok">Pflicht</span></td></tr>
+            <tr><td class="num">80</td><td>TCP</td><td>Weiterleitung auf HTTPS, ACME-Prüfung</td><td><span class="chip warn">empfohlen</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout stop">
+        <strong>Niemals weiterleiten: 22, 5432, 6379, 8080, 8787, 25575.</strong>
+        <span>Diese Dienste hören bewusst nur auf <code>127.0.0.1</code>. Besonders <code>8787</code>: Dort sitzt der Agent, und der hält den Docker-Socket. Eine Weiterleitung dorthin gäbe jedem im Internet Root auf deinem Rechner. Und <code>22</code> brauchst du nicht — für SSH von außen nimm ein VPN, kein offenes Tor.</span>
+      </div>
+      <p>Nach ein paar Minuten prüfen, ob das Zertifikat da ist:</p>
+      <pre><code>curl -fsSI https://panel.neuhauser.app | head -1
+<span class="c"># Erwartet: HTTP/2 200</span>
+
+<span class="c"># Falls nicht, Caddy fragen, woran es lag:</span>
+cd /opt/mc-saas/app/deploy &amp;&amp; sudo docker compose -f docker-compose.prod.yml logs caddy | tail -30</code></pre>
+    </section>
+
+    <!-- 13 -->
+    <section id="s13">
+      <div class="step-head"><span class="sn">13</span><h2>Erster Admin</h2></div>
+      <p>Im Browser auf <code>https://panel.neuhauser.app</code> registrieren. Der Bestätigungslink wird noch nicht per Mail verschickt, sondern steht im Log:</p>
+      <pre><code>sudo journalctl -u mc-panel -f
+<span class="c"># Registrieren, dann erscheint hier die Zeile mit dem Link.</span>
+<span class="c"># Kopieren, im Browser öffnen, fertig bestätigt.</span></code></pre>
+      <p>Danach zum Admin machen — bewusst über die Shell und nicht über das Panel, sonst wäre die Admin-Rolle über die Anwendung selbst erreichbar:</p>
+      <pre><code>cd /opt/mc-saas/app
+sudo -u mcpanel pnpm tsx scripts/promote-admin.ts DEINE@MAIL</code></pre>
+      <p>Neu anmelden, dann steht <code>/admin</code> offen.</p>
+    </section>
+
+    <!-- 14 -->
+    <section id="s14">
+      <div class="step-head"><span class="sn">14</span><h2>Erster Server</h2></div>
+      <ol class="list">
+        <li>Unter <code>/admin/plans</code> stehen die Standardtarife aus dem Seed. Die Liste zeigt pro Tarif, wie oft er noch auf die Maschine passt.</li>
+        <li>Unter <code>/servers/new</code> einen Server anlegen: Name, Adresse, Tarif, Software, Version.</li>
+        <li>Warten, bis der Zustand auf <em>läuft</em> springt. Beim ersten Mal dauert es länger — das Container-Image wird geladen und die Welt erzeugt.</li>
+        <li>Im Minecraft-Client verbinden: <code>deinname.mc.neuhauser.app</code>, ohne Portangabe.</li>
+      </ol>
+      <div class="callout">
+        <strong>Von innen klappt es oft nicht sofort.</strong>
+        <span>Viele Router leiten eine Anfrage aus dem eigenen Netz an die eigene öffentliche IP nicht zurück ins Netz — das heißt NAT-Hairpinning und fehlt gern. Von außen funktioniert es trotzdem. Zum Testen entweder das Handy im Mobilfunknetz nehmen oder im Client vorübergehend die interne Adresse eintragen.</span>
+      </div>
+    </section>
+
+    <!-- Betrieb -->
+    <section id="betrieb">
+      <h2>Betrieb</h2>
+      <pre><code>systemctl status mc-agent mc-panel
+journalctl -u mc-agent -f
+
+cd /opt/mc-saas/app/deploy &amp;&amp; sudo docker compose -f docker-compose.prod.yml ps
+
+<span class="c"># Nach jedem Umbau: außer mc-router darf nirgends 0.0.0.0 stehen.</span>
+<span class="c"># Docker schreibt seine iptables-Regeln an der Firewall vorbei.</span>
+sudo docker ps --format '{{.Names}} {{.Ports}}'
+
+<span class="c"># Pool im Blick behalten. Über 85 % wird ZFS spürbar langsam.</span>
+zpool list
+zfs list -o name,used,quota
+
+<span class="c"># Aktualisieren auf einen neueren Stand: derselbe Befehl wie beim ersten Mal</span>
+sudo bash ~/setup.sh</code></pre>
+      <div class="callout risk">
+        <strong>Nach jedem Kernel-Update kontrolliert neu starten.</strong>
+        <span>Ein neuer Kernel ohne passendes ZFS-Modul heißt: Nach dem Neustart ist der Pool nicht da, und kein Server startet. Deshalb nicht blind automatisch neu starten lassen, sondern nach dem Reboot einmal <code>zpool status</code> ansehen.</span>
+      </div>
+      <div class="callout stop">
+        <strong>Das eine, was noch fehlt.</strong>
+        <span>Die Snapshots liegen auf derselben SSD wie die Welten. Sie fangen ab, was täglich passiert — Griefing, ein kaputtes Plugin, ein versehentliches <code>/kill @a</code>. Stirbt die Platte, sind sie mit weg. Der nächtliche <code>zfs send</code> auf die NAS ist noch von Hand einzurichten; der Weg steht im Host-Runbook. Richte ihn ein, bevor der erste fremde Nutzer einen Server bekommt.</span>
+      </div>
+    </section>
+
+    <!-- Hilfe -->
+    <section id="hilfe">
+      <h2>Wenn es klemmt</h2>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Symptom</th><th>Ursache und Abhilfe</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>SSH fragt nach einem Passwort</td>
+              <td>Der Schlüsselimport im Installer hat nicht gegriffen. Mit Passwort anmelden, dann vom Mac aus <code>ssh-copy-id BENUTZER@IP</code>. Prüfen, dass es passwortlos geht, <em>bevor</em> das Setup-Skript läuft.</td>
+            </tr>
+            <tr>
+              <td><code>Permission denied</code> beim Skript</td>
+              <td><code>sudo bash setup.sh</code> statt <code>./setup.sh</code> — dann ist das Ausführbar-Bit egal.</td>
+            </tr>
+            <tr>
+              <td>„Keine freie Platte gefunden"</td>
+              <td>Du hast im Installer den geführten Weg erwischt, die Platte ist voll vergeben. Prüfen mit <code>sudo vgs</code> und <code>sudo sgdisk -p /dev/nvme0n1</code>. Ist wirklich nichts frei: verkleinern oder neu installieren.</td>
+            </tr>
+            <tr>
+              <td>Panel antwortet nicht</td>
+              <td><code>journalctl -u mc-panel -n 50</code>. Meist fehlt ein Wert in <code>/opt/mc-saas/app/.env</code> — die Anwendung prüft ihre Umgebung beim Start und sagt, welcher.</td>
+            </tr>
+            <tr>
+              <td>Kein Zertifikat</td>
+              <td>Caddy erreicht Let's Encrypt nicht oder der DNS-Eintrag zeigt woandershin. Erst <code>dig +short panel.neuhauser.app</code> gegen <code>curl api.ipify.org</code> halten, dann die Caddy-Logs lesen.</td>
+            </tr>
+            <tr>
+              <td>Server startet, ist aber nicht erreichbar</td>
+              <td><code>sudo docker ps</code> — läuft der Container? Dann <code>curl -s localhost:8080/routes</code>: Steht die Adresse in der Routing-Tabelle des mc-routers? Fehlt sie, hilft ein Neustart des Servers im Panel, der trägt sie neu ein.</td>
+            </tr>
+            <tr>
+              <td>OOM-Kills im Journal</td>
+              <td><code>zfs_arc_max</code> prüfen: <code>grep c_max /proc/spl/kstat/zfs/arcstats</code>. Der Cache muss gedeckelt sein, sonst nimmt er den JVMs den Speicher weg.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Wirklich ganz ohne Bildschirm installieren</h3>
+      <p>Geht — mit <em>autoinstall</em>. Auf den Stick kommt neben dem ISO eine <code>user-data</code> mit der kompletten Antwortliste, der Installer läuft ohne Rückfrage durch. Der Haken: Wenn etwas nicht passt, siehst du nichts. Kein Bild, kein SSH, keine Meldung — nur eine Maschine, die nicht hochkommt. Für die erste Installation auf unbekannter Hardware ist das der schlechtere Weg. Wenn du es trotzdem willst, sag Bescheid, dann schreibe ich dir die <code>user-data</code> passend zur Partitionierung aus Schritt 06.</p>
+    </section>
+
+  </main>
+
+  <div class="endnote">
+    Gehört zu <em>Minecraft-Hosting Bauplan</em> und <em>Minecraft-Host Einrichtung</em>. Das Runbook erklärt, <em>warum</em> die Entscheidungen so gefallen sind — diese Anleitung sagt nur, was zu tun ist.
+  </div>
+
+</div>

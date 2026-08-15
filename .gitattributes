@@ -14,3 +14,4 @@ pnpm-lock.yaml -diff linguist-generated
 # sie allein die Sprachstatistik des Repos.
 PLAN.html       linguist-documentation
 HOST-SETUP.html linguist-documentation
+INSTALL.html    linguist-documentation

@@ -5,6 +5,7 @@ Docker-Container. Admins legen Tarife mit RAM-, CPU- und Speichergrenzen an.
 
 Die Planung liegt im Repo:
 
+- `INSTALL.html` — Schritt für Schritt von der leeren Platte bis zum ersten Server
 - `PLAN.html` — Architektur, Datenmodell, Sicherheit, Roadmap P0–P8
 - `HOST-SETUP.html` — Runbook für den Linux-Host (Ubuntu, ZFS, Docker)
 
