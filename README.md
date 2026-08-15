@@ -209,11 +209,15 @@ Die Werte stehen in `.env` und beschreiben die Zielhardware:
 | `NODE_TOTAL_MEMORY_MB` | 49152 | 48 GB verbaut |
 | `NODE_RESERVED_MEMORY_MB` | 12288 | 6 GB ZFS-ARC + 2 GB OS + 4 GB Postgres/Redis/App/Agent |
 | `NODE_TOTAL_CPU_CORES` | 12 | i5-12500, 6 Kerne / 12 Threads |
-| `NODE_TOTAL_DISK_MB` | 953000 | 1-TB-SSD als ZFS-Pool `tank` |
-| `NODE_RESERVED_DISK_MB` | 190000 | 20 % Reserve, ZFS soll nicht über 85 % gefüllt werden |
+| `NODE_TOTAL_DISK_MB` | ~829000 | Rest der einzigen 1-TB-SSD nach 120 GB System, als ZFS-Pool `tank` |
+| `NODE_RESERVED_DISK_MB` | ~166000 | 20 % Reserve, ZFS soll nicht über 85 % gefüllt werden |
+
+Auf dem Host misst `deploy/setup.sh` diese Werte selbst und schreibt sie in
+die `.env`; die Tabelle beschreibt nur, was dabei herauskommt.
 
 Damit bleiben **36 GB für Server**, also neun Stück à 4 GB. RAM ist die
-bindende Grenze, nicht CPU und nicht Plattenplatz.
+bindende Grenze — die neun Server belegen zusammen keine 100 GB Plattenplatz,
+Platz ist also selbst auf einer einzelnen SSD nicht der Engpass.
 
 ## Aufbau
 

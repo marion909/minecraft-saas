@@ -9,8 +9,13 @@
 # Ausführen fortsetzen.
 #
 # Genau ein Schritt ist unwiderruflich — das Anlegen des ZFS-Pools löscht
-# die gewählte Platte. Er fragt ausdrücklich nach und lässt sich mit
+# das gewählte Gerät. Er fragt ausdrücklich nach und lässt sich mit
 # SKIP_ZFS=1 überspringen.
+#
+# Der Pool braucht keine eigene Platte. Eine Partition oder ein
+# LVM-Volume genügt; bei nur einer SSD im Rechner ist das der Normalfall.
+# Ist Platz unpartitioniert oder in einer Volume-Gruppe frei, bietet das
+# Skript an, ihn selbst herauszuschneiden.
 #
 # Steuerung über Umgebungsvariablen (sonst wird interaktiv gefragt):
 #   DOMAIN=neuhauser.app  PANEL_HOST=panel.neuhauser.app
@@ -131,7 +136,7 @@ install_packages() {
   apt-get update -qq
   apt-get install -y -qq \
     ca-certificates curl gnupg git jq \
-    zfsutils-linux \
+    zfsutils-linux gdisk parted \
     ufw fail2ban unattended-upgrades \
     cifs-utils zstd >/dev/null
 
@@ -159,52 +164,183 @@ install_packages() {
 
 # ---------------------------------------------------------------------------
 # 04 ZFS-Pool  — der einzige unwiderrufliche Schritt
+#
+# Der Pool will ein Blockgerät, keine ganze Platte. Eine Partition oder ein
+# logisches Volume ist genauso gut; verboten ist nur, was eingehängt ist.
 # ---------------------------------------------------------------------------
+
+# Stabiler Bezeichner: /dev/nvme0n1p3 kann nach einem Hardwaretausch etwas
+# anderes bezeichnen, der by-id-Pfad nicht. ZFS merkt sich, womit der Pool
+# angelegt wurde, und sucht beim Importieren danach.
+stable_name() {
+  local target link
+  target="$(readlink -f "$1")"
+  for link in /dev/disk/by-id/*; do
+    [ -e "$link" ] || continue
+    case "$link" in */wwn-*) continue ;; esac
+    [ "$(readlink -f "$link")" = "$target" ] || continue
+    printf '%s\n' "$link"
+    return 0
+  done
+  printf '%s\n' "$target"
+}
+
+# Unpartitionierter Platz einer GPT-Platte in MB. Alles andere: 0.
+disk_free_mb() {
+  local out sectors secsize
+  [ "$(lsblk -dno PTTYPE "$1" 2>/dev/null || true)" = "gpt" ] || { printf '0\n'; return 0; }
+  out="$(sgdisk -p "$1" 2>/dev/null)" || { printf '0\n'; return 0; }
+  sectors="$(printf '%s\n' "$out" | awk '/Total free space is/ {print $5; exit}')"
+  secsize="$(printf '%s\n' "$out" | awk '/Logical sector size/ {print $4; exit}')"
+  case "${sectors:-x}" in *[!0-9]*) printf '0\n'; return 0 ;; esac
+  case "${secsize:-x}" in *[!0-9]*) printf '0\n'; return 0 ;; esac
+  printf '%s\n' $((sectors * secsize / 1024 / 1024))
+}
+
+# Alle Blockgeräte mit Urteil, ob sie als Pool taugen.
+show_block_devices() {
+  local root_real dev size type note mounts fstype kids
+  root_real="$(readlink -f "$1")"
+
+  printf '\n     %sBlockgeräte:%s\n\n' "$B" "$N"
+  printf '     %-26s %-9s %-5s %s\n' "GERÄT" "GRÖSSE" "TYP" "HINWEIS"
+
+  while read -r dev size type; do
+    case "$type" in disk|part|lvm|crypt) ;; *) continue ;; esac
+
+    mounts="$(lsblk -no MOUNTPOINT "$dev" 2>/dev/null | grep -c . || true)"
+    fstype="$(lsblk -dno FSTYPE "$dev" 2>/dev/null || true)"
+    kids="$(lsblk -no NAME "$dev" 2>/dev/null | wc -l)"
+
+    if [ "$(readlink -f "$dev")" = "$root_real" ]; then
+      note="${R}Wurzeldateisystem — Finger weg${N}"
+    elif [ "$type" = "disk" ] && [ "${kids:-1}" -gt 1 ]; then
+      # Vor "eingehängt" geprüft: eine partitionierte Platte gilt sonst
+      # allein wegen ihrer Kinder als eingehängt, und der Hinweis, der
+      # weiterhilft, wäre der, den man nicht zu sehen bekommt.
+      note="${D}partitioniert — eine Partition wählen${N}"
+    elif [ "${mounts:-0}" -gt 0 ]; then
+      note="${Y}eingehängt${N}"
+    elif [ "$fstype" = "LVM2_member" ]; then
+      note="${D}LVM-Datenträger${N}"
+    elif [ "$fstype" = "zfs_member" ]; then
+      note="${Y}gehört bereits zu einem ZFS-Pool${N}"
+    elif [ -n "$fstype" ]; then
+      note="${Y}enthält $fstype${N}"
+    else
+      note="${G}frei — als Pool verwendbar${N}"
+    fi
+
+    printf '     %-26s %-9s %-5s %b\n' "$dev" "$size" "$type" "$note"
+  done < <(lsblk -pnro NAME,SIZE,TYPE)
+  printf '\n'
+}
+
+# Aus einer Partition wird nie Platz genommen, nur aus dem, was ohnehin
+# niemandem gehört. Deshalb darf das hier ohne LOESCHEN-Abfrage laufen.
+carve_partition() {
+  local disk="$1" before after new
+  before="$(lsblk -pnro NAME "$disk" | tail -n +2 | sort)"
+
+  # 0:0:0 heißt: nächste freie Nummer, größter freier Block, ganz
+  # ausfüllen. Bestehende Partitionen kann das nicht berühren.
+  sgdisk -n 0:0:0 -t 0:bf01 -c 0:mc-saas "$disk" >/dev/null 2>&1 ||
+    die "Partition anlegen auf $disk fehlgeschlagen."
+
+  partprobe "$disk" >/dev/null 2>&1 || partx -a "$disk" >/dev/null 2>&1 || true
+  udevadm settle >/dev/null 2>&1 || true
+
+  after="$(lsblk -pnro NAME "$disk" | tail -n +2 | sort)"
+  new="$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after") | head -1)"
+  [ -n "$new" ] ||
+    die "Die neue Partition ist dem Kernel nicht aufgefallen. Neu starten und das Skript erneut ausführen."
+
+  ZFS_DISK="$(stable_name "$new")"
+  ok "Partition $new angelegt ($(lsblk -dno SIZE "$new" | tr -d ' '))"
+}
+
+# Freien Platz suchen und anbieten — erst unpartitioniert auf den Platten,
+# dann freie Extents in den Volume-Gruppen. Setzt ZFS_DISK.
+offer_free_space() {
+  local disk free answer vg vgfree
+
+  while read -r disk; do
+    free="$(disk_free_mb "$disk")"
+    [ "$free" -ge 20480 ] || continue
+
+    printf '     %s%s GB auf %s sind nicht partitioniert.%s\n' \
+      "$B" "$((free / 1024))" "$disk" "$N"
+    answer="j"
+    if [ "$ASSUME_YES" != "1" ]; then
+      read -r -p "     Daraus eine Partition für den Pool anlegen? [J/n]: " answer </dev/tty
+      answer="${answer:-j}"
+    fi
+    case "$answer" in j|J|y|Y) ;; *) continue ;; esac
+
+    carve_partition "$disk"
+    return 0
+  done < <(lsblk -pnrdo NAME,TYPE | awk '$2 == "disk" { print $1 }')
+
+  command -v vgs >/dev/null 2>&1 || return 0
+  while read -r vg vgfree; do
+    vgfree="${vgfree%%.*}"
+    case "${vgfree:-x}" in ''|*[!0-9]*) continue ;; esac
+    [ "$vgfree" -ge 20480 ] || continue
+
+    printf '     %s%s GB sind in der Volume-Gruppe %s frei.%s\n' \
+      "$B" "$((vgfree / 1024))" "$vg" "$N"
+    answer="j"
+    if [ "$ASSUME_YES" != "1" ]; then
+      read -r -p "     Daraus ein Volume für den Pool anlegen? [J/n]: " answer </dev/tty
+      answer="${answer:-j}"
+    fi
+    case "$answer" in j|J|y|Y) ;; *) continue ;; esac
+
+    lvcreate -y -n mcpool -l 100%FREE "$vg" >/dev/null ||
+      die "Logisches Volume in $vg anlegen fehlgeschlagen."
+    udevadm settle >/dev/null 2>&1 || true
+    ZFS_DISK="/dev/$vg/mcpool"
+    ok "Logisches Volume $ZFS_DISK angelegt"
+    return 0
+  done < <(vgs --noheadings --nosuffix --units m -o vg_name,vg_free 2>/dev/null || true)
+}
+
 setup_zfs() {
   step "ZFS-Pool einrichten"
 
   if [ "${SKIP_ZFS:-0}" = "1" ]; then
-    warn "Übersprungen (SKIP_ZFS=1). Ohne ZFS gibt es keine harten Speichergrenzen."
+    warn "Übersprungen (SKIP_ZFS=1). Ohne ZFS gibt es keine harten"
+    warn "Speichergrenzen, und Sicherungen werden tar-Archive statt Snapshots."
+    mkdir -p "$DATA_ROOT" "$BACKUP_ROOT"
+    # Ohne Pool ist der freie Platz des tragenden Dateisystems die Grenze.
+    # Ohne diesen Wert bliebe NODE_TOTAL_DISK_MB auf 0 und die
+    # Kapazitätsprüfung ließe keinen einzigen Server durch.
+    POOL_MB="$(df -PBM "$DATA_ROOT" | awk 'NR == 2 { sub(/M$/, "", $4); print $4 }')"
+    ok "Frei unter $DATA_ROOT: ${POOL_MB} MB"
     return 0
   fi
 
   if zpool list "$ZFS_POOL" >/dev/null 2>&1; then
     skip "Pool \"$ZFS_POOL\" existiert"
   else
-    local root_disk candidates
-    root_disk="$(lsblk -no PKNAME "$(findmnt -no SOURCE /)" 2>/dev/null | head -1 || true)"
+    local root_src
+    root_src="$(findmnt -no SOURCE / | sed 's/\[.*\]$//')"
 
-    printf '\n     %sVerfügbare Platten:%s\n\n' "$B" "$N"
-    printf '     %-12s %-10s %-28s %s\n' "GERÄT" "GRÖSSE" "MODELL" "HINWEIS"
-    candidates=()
-    while read -r name size model; do
-      local note=""
-      [ "$name" = "$root_disk" ] && note="${R}Systemplatte — Finger weg${N}"
-      if [ -z "$note" ] && lsblk -no MOUNTPOINT "/dev/$name" 2>/dev/null | grep -q .; then
-        note="${Y}enthält eingehängte Dateisysteme${N}"
-      fi
-      [ -z "$note" ] && { note="frei"; candidates+=("$name"); }
-      printf '     %-12s %-10s %-28s %b\n' "$name" "$size" "${model:--}" "$note"
-    done < <(lsblk -dno NAME,SIZE,MODEL --sort SIZE | tac)
+    if [ -z "${ZFS_DISK:-}" ]; then
+      show_block_devices "$root_src"
+      offer_free_space
+    fi
 
-    [ ${#candidates[@]} -gt 0 ] || die "Keine freie Platte gefunden. Mit SKIP_ZFS=1 ohne ZFS fortfahren."
+    ask ZFS_DISK "Was wird der Pool? (Gerätepfad)"
 
-    printf '\n     %sStabile Bezeichner der freien Platten:%s\n' "$B" "$N"
-    for name in "${candidates[@]}"; do
-      for link in /dev/disk/by-id/*; do
-        [ "$(readlink -f "$link")" = "/dev/$name" ] || continue
-        case "$link" in *-part*) continue ;; esac
-        printf '     %s\n' "$link"
-      done
-    done
-
-    printf '\n'
-    ask ZFS_DISK "Welche Platte wird der Pool? (vollständiger by-id-Pfad)"
-
-    [ -e "$ZFS_DISK" ] || die "\"$ZFS_DISK\" existiert nicht."
+    [ -b "$ZFS_DISK" ] || die "\"$ZFS_DISK\" ist kein Blockgerät."
     local target
     target="$(readlink -f "$ZFS_DISK")"
-    [ "$(basename "$target")" != "$root_disk" ] || die "Das ist die Systemplatte."
+
+    [ "$target" != "$(readlink -f "$root_src")" ] || die "Das ist das Wurzeldateisystem."
+    if lsblk -no MOUNTPOINT "$target" 2>/dev/null | grep -q .; then
+      die "Auf $target ist etwas eingehängt. Eingehängte Dateisysteme werden nicht überschrieben."
+    fi
 
     printf '\n     %s%s ALLE DATEN AUF %s WERDEN GELÖSCHT %s\n' "$R" "$B" "$target" "$N"
     lsblk "$target" | sed 's/^/     /'
@@ -218,7 +354,7 @@ setup_zfs() {
     zpool create -f -o ashift=12 \
       -O compression=lz4 -O atime=off -O xattr=sa -O acltype=posixacl \
       -O canmount=off -m none \
-      "$ZFS_POOL" "$ZFS_DISK"
+      "$ZFS_POOL" "$(stable_name "$ZFS_DISK")"
     ok "Pool \"$ZFS_POOL\" angelegt"
   fi
 

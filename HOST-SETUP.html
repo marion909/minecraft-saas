@@ -268,7 +268,7 @@
       <p>Der einzige echte Nachteil ist der ARC-Cache, der sich sonst nimmt, was er kriegt — und RAM ist bei uns die knappe Ressource, weil jede JVM ihren Heap tatsächlich belegt. Deshalb bekommt ARC in Schritt 4 eine harte Obergrenze und wird in <code>node.reservedMemoryMb</code> eingerechnet. Damit ist der Nachteil verwaltet, die Vorteile bleiben.</p>
       <div class="callout stop">
         <strong>Snapshots im selben Pool sind kein Backup gegen Plattenausfall.</strong>
-        <span>Sie schützen gegen das, was tatsächlich täglich passiert: Griefing, ein kaputtes Plugin, ein versehentliches <code>/kill @a</code>. Stirbt die Platte, sind Pool und Snapshots gleichzeitig weg. Für Katastrophenschutz braucht es ein nächtliches <code>zfs send</code> auf eine zweite Platte oder ein anderes Gerät — deshalb steht unten eine zweite Platte auf der Hardware-Liste.</span>
+        <span>Sie schützen gegen das, was tatsächlich täglich passiert: Griefing, ein kaputtes Plugin, ein versehentliches <code>/kill @a</code>. Stirbt die Platte, sind Pool und Snapshots gleichzeitig weg. Für Katastrophenschutz braucht es ein nächtliches <code>zfs send</code> auf ein anderes Gerät — bei einer einzelnen Platte im Rechner ist das die NAS.</span>
       </div>
     </section>
 
@@ -299,22 +299,21 @@
           <tbody>
             <tr><td>CPU</td><td>Intel i5-12500</td><td>6 Kerne / 12 Threads, hoher Takt — für Minecraft genau richtig, weil die Tick-Schleife single-threaded ist. Node-Wert: 12 Threads bei Überbuchung 1,5.</td></tr>
             <tr><td>RAM</td><td>48 GB</td><td>12 GB reserviert (6 GB ARC, 2 GB OS, 4 GB Dienste), 36 GB für Server. Das ist die bindende Grenze: <strong>9 Server à 4 GB</strong>.</td></tr>
-            <tr><td>SSD 1</td><td>256 GB</td><td>Komplett System: Ubuntu, <code>/var/lib/docker</code>, Logs. Kein Partitionieren für ZFS nötig.</td></tr>
-            <tr><td>SSD 2</td><td>1 TB</td><td>Vollständig der ZFS-Pool <code>tank</code>. Nach 20 % Reserve bleiben rund 760 GB für Welten und Snapshots — Platz ist hier nicht der Engpass.</td></tr>
-            <tr><td>Backup-Ziel</td><td>NAS DXP4800</td><td>Es gibt keine dritte Platte, also gehen die nächtlichen <code>zfs send</code>-Ströme als Dateien auf die NAS. Siehe Schritt 3.</td></tr>
+            <tr><td>SSD</td><td>1 TB, einzeln</td><td>Geteilt: 120 GB System (Ubuntu, <code>/var/lib/docker</code>, Logs), der Rest — rund 810 GB — als ZFS-Pool <code>tank</code>. Nach 20 % Reserve bleiben etwa 650 GB für Welten und Snapshots.</td></tr>
+            <tr><td>Backup-Ziel</td><td>NAS DXP4800</td><td>Es gibt keine zweite Platte, also gehen die nächtlichen <code>zfs send</code>-Ströme als Dateien auf die NAS. Siehe Schritt 3.</td></tr>
           </tbody>
         </table>
       </div>
-      <p>Zwei getrennte SSDs sind hier ein Vorteil: Du musst nichts partitionieren. Die 256er wird komplett zum System, die 1 TB komplett zum Pool.</p>
+      <p>Eine Platte reicht. ZFS will ein Blockgerät, keine ganze Platte — eine Partition tut es genauso. Der einzige Unterschied zum Zwei-Platten-Aufbau: Du musst bei der Ubuntu-Installation einmal von Hand partitionieren, statt den Installer die Systemplatte allein füllen zu lassen. Das ist Schritt 2.</p>
 
       <div class="callout">
-        <strong>Warum das System nicht auch auf ZFS liegt.</strong>
-        <span>Docker legt Images und Container-Schichten in <code>/var/lib/docker</code> ab. Der overlay2-Treiber auf ext4 ist der am besten getestete Pfad überhaupt; ZFS-on-root bringt zusätzlich Boot-Environment- und Bootloader-Fragen mit, die dir hier nichts einbringen. System einfach halten, ZFS genau dort einsetzen, wo es zählt: bei den Weltdaten.</span>
+        <strong>Warum das System nicht einfach mit auf ZFS liegt.</strong>
+        <span>Der Installer bietet ZFS für die Wurzel an — dann bräuchte es keine Partitionierung, alles läge in einem Pool. Trotzdem nicht: Docker legt Images und Container-Schichten in <code>/var/lib/docker</code> ab, und auf ZFS wählt Docker seinen <code>zfs</code>-Treiber statt overlay2. Overlay2 auf ext4 ist der am besten getestete Pfad überhaupt und der, gegen den diese Anwendung entwickelt wurde. Dazu kämen Boot-Environments und ein GRUB, der ZFS lesen können muss. System einfach halten, ZFS genau dort einsetzen, wo es zählt: bei den Weltdaten.</span>
       </div>
 
       <div class="callout risk">
-        <strong>Beide SSDs bilden keine Redundanz.</strong>
-        <span>Sie haben getrennte Aufgaben, nicht dieselben Daten. Stirbt die 1-TB-SSD, sind alle Welten weg — Snapshots inklusive, denn die liegen im selben Pool. Der Schutz dagegen ist ausschließlich der nächtliche Strom auf die NAS. Richte ihn ein, bevor der erste fremde Nutzer einen Server bekommt, nicht danach.</span>
+        <strong>Eine Platte heißt: ein einziger Ausfallpunkt.</strong>
+        <span>System, Welten und Snapshots liegen auf demselben Gerät. Snapshots schützen gegen Griefing, ein kaputtes Plugin, ein versehentliches <code>/kill @a</code> — gegen den Tod der SSD schützen sie nicht, sie sterben mit. Der einzige Schutz dagegen ist der nächtliche Strom auf die NAS. Richte ihn ein, bevor der erste fremde Nutzer einen Server bekommt, nicht danach.</span>
       </div>
     </section>
 
@@ -322,7 +321,27 @@
     <section id="os">
       <div class="step-head"><span class="sn">02</span><h2>Betriebssystem</h2></div>
       <p><strong>Ubuntu Server 24.04 LTS.</strong> Ubuntu liefert ZFS als offiziell unterstütztes Paket mit, das erspart dir das DKMS-Gebastel, das man unter Debian betreibt. 24.04 ist bis 2029 versorgt und der ZFS-Stack darauf ist lange durchgeschüttelt. Ein neueres LTS geht auch, prüfe dann aber vor der Installation, ob <code>zfsutils-linux</code> für den mitgelieferten Kernel verfügbar ist — an dieser Kombination hängt alles Weitere.</p>
-      <p>Bei der Installation: minimale Serverinstallation, kein Desktop, SSH-Server aktivieren, deinen öffentlichen Schlüssel hinterlegen. Die zweite Platte und den freien Bereich der NVMe <em>nicht</em> partitionieren oder formatieren lassen — die übernimmt ZFS in Schritt 3.</p>
+      <p>Bei der Installation: minimale Serverinstallation, kein Desktop, SSH-Server aktivieren, deinen öffentlichen Schlüssel hinterlegen.</p>
+
+      <h3>Die Platte aufteilen</h3>
+      <p>Im Installer <strong>Custom storage layout</strong> wählen, nicht den geführten Weg. Drei Partitionen anlegen und den Rest <em>frei lassen</em>:</p>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Partition</th><th>Größe</th><th>Format</th><th>Einhängepunkt</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td class="num">1 GB</td><td>EFI System Partition</td><td><code>/boot/efi</code></td></tr>
+            <tr><td>2</td><td class="num">120 GB</td><td>ext4</td><td><code>/</code></td></tr>
+            <tr><td>—</td><td class="num">Rest, ~810 GB</td><td><strong>frei lassen</strong></td><td>—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Kein separates <code>/boot</code> nötig, kein LVM, keine Verschlüsselung — GRUB liest ext4 direkt. 120 GB für das System sind reichlich: Ubuntu, die Docker-Images (Java-Varianten, Postgres, Redis, Caddy, mc-router — zusammen unter 10 GB), die Anwendung und die Logs. Der freie Bereich bleibt unangetastet, bis ihn Schritt 3 zum Pool macht.</p>
+
+      <div class="callout">
+        <strong>Schon installiert und alles vergeben?</strong>
+        <span>Dann sieh zuerst nach, ob überhaupt etwas fehlt: Die geführte LVM-Installation von Ubuntu deckelt das Wurzel-Volume und lässt den Rest der Volume-Gruppe unbenutzt — <code>sudo vgs</code> zeigt es unter <code>VFree</code>. Ist dort Platz, brauchst du gar nichts zu tun; <code>deploy/setup.sh</code> findet ihn und bietet an, ein Volume daraus zu schneiden. Dasselbe gilt für unpartitionierten Platz, den <code>sudo sgdisk -p /dev/nvme0n1</code> als <em>Total free space</em> ausweist. Erst wenn beides leer ausgeht, musst du wirklich verkleinern — bei LVM mit <code>resize2fs</code> und <code>lvreduce</code>, sonst mit gparted von einem Live-Stick. Neu installieren ist an dem Punkt oft der schnellere Weg.</span>
+      </div>
+
       <pre><code>sudo apt update &amp;&amp; sudo apt full-upgrade -y
 sudo apt install -y zfsutils-linux curl ca-certificates gnupg htop
 
@@ -336,17 +355,24 @@ stat -fc %T /sys/fs/cgroup     <span class="c"># muss "cgroup2fs" ausgeben</span
     <!-- 03 -->
     <section id="pool">
       <div class="step-head"><span class="sn">03</span><h2>ZFS-Pool anlegen</h2></div>
+      <p><code>deploy/setup.sh</code> erledigt diesen Schritt mit — inklusive Anlegen der Partition, wenn du den Rest der Platte frei gelassen hast. Was folgt, beschreibt, was dabei passiert, und ist der Weg für den Fall, dass du es von Hand tun willst.</p>
       <div class="callout risk">
-        <strong>Immer <code>/dev/disk/by-id/</code> verwenden, nie <code>/dev/nvme0n1</code>.</strong>
-        <span>Kernel-Gerätenamen können sich zwischen Neustarts ändern, sobald eine Platte dazukommt. Ein Pool, der auf <code>/dev/sdb</code> zeigt, findet nach dem Einbau der Backup-Platte womöglich das falsche Gerät. Die IDs sind stabil.</span>
+        <strong>Immer <code>/dev/disk/by-id/</code> verwenden, nie <code>/dev/nvme0n1p3</code>.</strong>
+        <span>Kernel-Gerätenamen können sich zwischen Neustarts ändern, sobald eine Platte dazukommt. Ein Pool, der auf <code>/dev/sdb2</code> zeigt, findet nach dem Einbau der Backup-Platte womöglich das falsche Gerät. Die IDs sind stabil.</span>
       </div>
-      <pre><code><span class="c"># Verfügbare Geräte und ihre stabilen IDs ansehen</span>
-ls -l /dev/disk/by-id/
+      <pre><code><span class="c"># Freien Platz und bestehende Partitionen ansehen</span>
 lsblk
+sudo sgdisk -p /dev/nvme0n1        <span class="c"># Zeile "Total free space is …"</span>
 
-<span class="c"># Die komplette 1-TB-SSD wird der Pool — ohne Partitionsnummer am Ende,</span>
-<span class="c"># ZFS legt sein Label selbst an. Vorher sicherstellen, dass es wirklich</span>
-<span class="c"># die 1-TB-Platte ist und nicht die 256er mit dem System darauf.</span>
+<span class="c"># Partition im größten freien Block anlegen. 0:0:0 heißt: nächste freie</span>
+<span class="c"># Nummer, Anfang und Ende des Blocks. Bestehende Partitionen kann das</span>
+<span class="c"># nicht berühren — deshalb ist dieser Befehl ungefährlich.</span>
+sudo sgdisk -n 0:0:0 -t 0:bf01 -c 0:mc-saas /dev/nvme0n1
+sudo partprobe /dev/nvme0n1
+
+<span class="c"># Stabile ID der neuen Partition heraussuchen (endet auf -partN)</span>
+ls -l /dev/disk/by-id/ | grep nvme0n1p
+
 sudo zpool create -o ashift=12 \
   -O compression=lz4 \
   -O atime=off \
@@ -354,10 +380,10 @@ sudo zpool create -o ashift=12 \
   -O acltype=posixacl \
   -O canmount=off \
   -m none \
-  tank /dev/disk/by-id/DEINE-1TB-SSD-ID</code></pre>
+  tank /dev/disk/by-id/DEINE-ID-partN</code></pre>
       <div class="callout risk">
         <strong>Die Geräte-ID zweimal lesen.</strong>
-        <span><code>zpool create</code> fragt nicht nach und überschreibt, was da ist. Auf der 256er liegt zu diesem Zeitpunkt dein frisch installiertes Ubuntu. <code>lsblk</code> zeigt die Größen — nimm die Zeile mit rund 931 G, nicht die mit 238 G.</span>
+        <span><code>zpool create</code> fragt nicht nach und überschreibt, was da ist. Auf derselben Platte liegt zu diesem Zeitpunkt dein frisch installiertes Ubuntu. Der Name muss auf <code>-partN</code> enden — ohne Partitionsnummer meinst du die ganze Platte, und dann ist das System weg. <code>lsblk</code> gegenprüfen: Die richtige Zeile hat rund 810 G und keinen Einhängepunkt.</span>
       </div>
       <div class="scroller">
         <table>

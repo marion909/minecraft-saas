@@ -790,7 +790,7 @@ RCON: save-on                        <span class="c"># IMMER, auch bei Fehler (f
       </ul>
       <div class="callout risk">
         <strong>Snapshots im selben Pool sind kein Schutz gegen Plattenausfall.</strong>
-        <span>Sie decken den Fall ab, der täglich vorkommt — Griefing, kaputtes Plugin, versehentliches Löschen. Stirbt die NVMe, sind Welten und Snapshots gleichzeitig weg. Dafür braucht es ein nächtliches <code>zfs send -I</code> auf den zweiten Pool. Das ist ein Betriebs-Job in P8, kein Nutzer-Feature, und darf im Panel nicht als „Backup" firmieren, sonst verspricht die UI etwas Falsches.</span>
+        <span>Sie decken den Fall ab, der täglich vorkommt — Griefing, kaputtes Plugin, versehentliches Löschen. Stirbt die NVMe, sind Welten und Snapshots gleichzeitig weg. Dafür braucht es ein nächtliches <code>zfs send -I</code> auf ein Gerät außerhalb des Rechners. Das ist ein Betriebs-Job in P8, kein Nutzer-Feature, und darf im Panel nicht als „Backup" firmieren, sonst verspricht die UI etwas Falsches.</span>
       </div>
     </section>
 
@@ -913,7 +913,7 @@ RCON: save-on                        <span class="c"># IMMER, auch bei Fehler (f
           <div class="pid">P7</div>
           <div class="pbody">
             <div class="ptitle">Backups</div>
-            <div class="pdesc">ZFS-Snapshot mit <code>save-off</code>/<code>save-on</code>-Sequenz, Rotation nach Plan-Limit, Restore per <code>zfs rollback</code> als eigener Job, Download über <code>zfs send</code> mit ablaufender Signatur. Dazu der nächtliche <code>zfs send</code> auf den zweiten Pool.</div>
+            <div class="pdesc">ZFS-Snapshot mit <code>save-off</code>/<code>save-on</code>-Sequenz, Rotation nach Plan-Limit, Restore per <code>zfs rollback</code> als eigener Job, Download über <code>zfs send</code> mit ablaufender Signatur. Dazu der nächtliche <code>zfs send</code> nach außerhalb.</div>
             <div class="pout">Ergebnis: Welt kaputt, Welt zurückgeholt.</div>
           </div>
         </div>

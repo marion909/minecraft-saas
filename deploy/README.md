@@ -6,7 +6,7 @@ cd minecraft-saas
 sudo ./deploy/setup.sh
 ```
 
-Das Skript fragt nach Domain und E-Mail, sucht die Platte für ZFS aus und
+Das Skript fragt nach Domain und E-Mail, sucht das Gerät für ZFS aus und
 erledigt danach alles Weitere. Rechne mit etwa 15 Minuten, das meiste davon
 Downloads.
 
@@ -17,7 +17,7 @@ Downloads.
 | 01 | Voraussetzungen: root, Ubuntu/Debian, cgroup v2, Hardware ermitteln |
 | 02 | Domain, Panel-Hostname, Wildcard-Basis, ACME-Mail |
 | 03 | Pakete, Node (mind. 23.6 — der Agent läuft als TypeScript), pnpm |
-| 04 | **ZFS-Pool anlegen — löscht die gewählte Platte** |
+| 04 | **ZFS-Pool anlegen — löscht das gewählte Gerät** |
 | 05 | ZFS-Cache deckeln, damit er den JVMs keinen Speicher wegnimmt |
 | 06 | Docker, Log-Rotation, `live-restore`, Netz `mc-net` |
 | 07 | `vm.swappiness=1`, `vm.max_map_count`, Verbindungsgrenzen |
@@ -34,30 +34,64 @@ Downloads.
 
 ## Der eine gefährliche Schritt
 
-Schritt 04 legt den ZFS-Pool an und **löscht dabei die gewählte Platte
+Schritt 04 legt den ZFS-Pool an und **löscht dabei das gewählte Gerät
 vollständig**. Das Skript
 
-- schließt die Systemplatte aus und markiert sie in der Liste,
-- markiert Platten mit eingehängten Dateisystemen,
-- zeigt vor dem Löschen `lsblk` der Zielplatte,
+- listet alle Blockgeräte mit einem Urteil, ob sie taugen,
+- markiert das Wurzeldateisystem rot und alles Eingehängte gelb,
+- weist eingehängte Geräte ab, auch wenn man sie von Hand einträgt,
+- zeigt vor dem Löschen `lsblk` des Ziels,
 - verlangt, dass `LOESCHEN` eingetippt wird.
 
 Mit `SKIP_ZFS=1` lässt sich der Schritt auslassen. Dann fällt der Agent auf
-einfache Verzeichnisse zurück — **ohne harte Speichergrenzen**. Für einen
-Testlauf in Ordnung, für den Betrieb nicht.
+einfache Verzeichnisse zurück — **ohne harte Speichergrenzen**, und
+Sicherungen werden tar-Archive statt Snapshots. Für einen Testlauf in
+Ordnung, für den Betrieb nicht.
+
+## Nur eine Platte im Rechner
+
+Der übliche Fall, und kein Problem: Der Pool braucht kein eigenes Laufwerk,
+ein Blockgerät genügt. Findet das Skript keinen freien Kandidaten, sucht es
+selbst nach Platz und bietet an, ihn herauszuschneiden:
+
+- **Unpartitionierter Platz** am Ende einer GPT-Platte → es legt mit
+  `sgdisk -n 0:0:0` eine Partition im größten freien Block an. Bestehende
+  Partitionen kann das nicht berühren.
+- **Freie Extents in einer Volume-Gruppe** → `lvcreate -l 100%FREE`. Genau
+  der Fall nach einer Ubuntu-Standardinstallation: Der Installer deckelt
+  das Wurzel-Volume und lässt den Rest der Gruppe liegen.
+
+Ab 20 GB aufwärts wird gefragt. Das Herausschneiden selbst ist
+unkritisch — es nimmt nur, was ohnehin niemandem gehört, und läuft deshalb
+ohne `LOESCHEN`-Abfrage.
+
+Ist die Platte dagegen restlos vergeben, bleibt nur, vorher Platz zu
+schaffen: bei LVM `lvreduce` samt vorherigem `resize2fs`, sonst ein
+`gparted` von einem Live-Stick. Oder neu installieren und der Wurzel von
+vornherein weniger geben.
+
+Wichtig zu wissen bei nur einer Platte: Die Snapshots liegen dann
+zwangsläufig auf demselben Gerät wie die Welten. Sie schützen gegen
+Griefing und kaputte Plugins, nicht gegen einen Plattenausfall. Das
+`zfs send` auf ein zweites Gerät ist hier keine Kür.
 
 ## Unbeaufsichtigt
 
 ```bash
 sudo DOMAIN=neuhauser.app \
      ACME_EMAIL=du@example.com \
-     ZFS_DISK=/dev/disk/by-id/nvme-... \
+     ZFS_DISK=/dev/disk/by-id/nvme-...-part4 \
      ASSUME_YES=1 \
      ./deploy/setup.sh
 ```
 
+`ZFS_DISK` nimmt jedes Blockgerät: ganze Platte, Partition oder logisches
+Volume.
+
 `ASSUME_YES=1` übernimmt die Vorgaben und überspringt die
-Löschbestätigung — nur einsetzen, wenn `ZFS_DISK` sicher stimmt.
+Löschbestätigung — nur einsetzen, wenn `ZFS_DISK` sicher stimmt. Ohne
+`ZFS_DISK` schneidet das Skript in diesem Modus freien Platz ungefragt
+heraus.
 
 ## Wiederholtes Ausführen
 
@@ -119,7 +153,5 @@ Der Mailversand steht auf `console` — Bestätigungslinks landen im Journal
 statt im Postfach. Für den ersten echten Nutzer in `.env` einen Anbieter
 eintragen.
 
-Und die Snapshots liegen im selben Pool wie die Welten. Sie schützen gegen
-Griefing und kaputte Plugins, nicht gegen einen Plattenausfall. Ein
-nächtliches `zfs send` auf die NAS ist noch von Hand einzurichten; der Weg
-steht im Host-Runbook.
+Und das nächtliche `zfs send` auf die NAS ist noch von Hand einzurichten —
+siehe oben, warum das keine Kür ist. Der Weg steht im Host-Runbook.
