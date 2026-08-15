@@ -1,0 +1,77 @@
+# Produktive Infrastruktur. Panel und Agent laufen NICHT hier, sondern als
+# systemd-Dienste auf dem Host: Der Agent braucht ZFS-Kommandos, und das
+# Panel spricht ihn über 127.0.0.1 an.
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mcsaas
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD fehlt}
+      POSTGRES_DB: mcsaas
+    # Nur lokal. Eine Weiterleitung hierher wäre der direkte Weg in alle Daten.
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mcsaas -d mcsaas"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Der einzige Dienst, den Spieler je erreichen.
+  mc-router:
+    image: itzg/mc-router:latest
+    restart: unless-stopped
+    command:
+      - -port
+      - "25565"
+      - -api-binding
+      - "0.0.0.0:8080"
+      # Vorgabe wäre 1 pro Sekunde — das trifft schon eine Handvoll Spieler,
+      # die nach einem Neustart gleichzeitig zurückkommen.
+      - -connection-rate-limit
+      - "20"
+    ports:
+      - "25565:25565"
+      # Die Routen-API bleibt lokal; sie darf Server umleiten.
+      - "127.0.0.1:8080:8080"
+    networks:
+      - mc-net
+
+  # Host-Netz, damit Caddy die Ports 80/443 direkt bindet und das Panel
+  # unter 127.0.0.1:3000 erreicht.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  postgres-data:
+  redis-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  mc-net:
+    name: mc-net
+    external: true

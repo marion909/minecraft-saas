@@ -139,13 +139,28 @@ pnpm typecheck
 pnpm build
 ```
 
-## Voraussetzungen
+## Auf einem Linux-Host installieren
 
-- Node 22 oder neuer
+```bash
+git clone https://github.com/marion909/minecraft-saas.git
+cd minecraft-saas
+sudo ./deploy/setup.sh
+```
+
+Richtet alles ein: ZFS-Pool, Docker, Firewall, Dienstkonten, TLS über Caddy,
+mc-router, Datenbank und die beiden systemd-Dienste. Einzelheiten und der
+unbeaufsichtigte Modus stehen in [deploy/README.md](deploy/README.md).
+
+## Entwicklung
+
+### Voraussetzungen
+
+- Node 23.6 oder neuer — Agent und Tests laufen als TypeScript direkt über
+  Node, und erst ab dieser Version werden Typen ohne Flag gestrippt
 - pnpm
-- Docker (für Postgres und Redis in der Entwicklung)
+- Docker (für Postgres und Redis)
 
-## Einrichten
+### Einrichten
 
 ```bash
 pnpm install

@@ -1,0 +1,34 @@
+# Caddy holt und erneuert die Zertifikate selbst. Die Domain .app steht auf
+# der HSTS-Preload-Liste — ohne gültiges Zertifikat ist das Panel in keinem
+# Browser erreichbar, auch nicht testweise über http.
+{
+	email {$ACME_EMAIL}
+}
+
+{$PANEL_HOST} {
+	encode zstd gzip
+
+	# Server-Sent Events für Log und Auslastung dürfen nicht gepuffert
+	# werden — sonst kommen die Zeilen erst am Stück, wenn der Puffer
+	# voll ist, und die Konsole wirkt eingefroren.
+	@stream path /api/servers/*/logs /api/servers/*/stats
+	reverse_proxy @stream 127.0.0.1:3000 {
+		flush_interval -1
+	}
+
+	# Uploads können groß sein; die Grenze zieht der Agent, nicht Caddy.
+	reverse_proxy 127.0.0.1:3000 {
+		flush_interval -1
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	request_body {
+		max_size 512MB
+	}
+}

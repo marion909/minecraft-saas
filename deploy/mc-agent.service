@@ -1,0 +1,45 @@
+[Unit]
+Description=Minecraft-SaaS Node-Agent
+Documentation=https://github.com/marion909/minecraft-saas
+After=network-online.target docker.service zfs.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=mcagent
+Group=mcsaas
+WorkingDirectory=/opt/mc-saas/app
+
+# Node führt die TypeScript-Dateien direkt aus und strippt dabei die Typen.
+ExecStart=/usr/bin/node agent/index.ts
+
+Restart=always
+RestartSec=5
+
+# Der Agent hält den Docker-Socket und ist damit root-gleichwertig. Was
+# sich trotzdem einschränken lässt, ist eingeschränkt.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+
+# Schreiben darf er nur dort, wo Serverdaten und Backups liegen.
+ProtectSystem=full
+ReadWritePaths=/srv/mc /srv/backups
+
+# ZFS-Kommandos brauchen unter Linux CAP_SYS_ADMIN, auch mit `zfs allow`.
+AmbientCapabilities=CAP_SYS_ADMIN
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mc-agent
+
+[Install]
+WantedBy=multi-user.target

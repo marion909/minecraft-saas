@@ -1,0 +1,42 @@
+[Unit]
+Description=Minecraft-SaaS Web-Panel
+Documentation=https://github.com/marion909/minecraft-saas
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mcpanel
+Group=mcsaas
+WorkingDirectory=/opt/mc-saas/app
+
+Environment=NODE_ENV=production
+Environment=PORT=3000
+# Nur lokal binden — nach außen geht ausschließlich Caddy.
+Environment=HOSTNAME=127.0.0.1
+ExecStart=/usr/bin/node node_modules/next/dist/bin/next start
+
+Restart=always
+RestartSec=5
+
+# Das Panel braucht weder Docker noch ZFS noch Schreibrechte außerhalb
+# seines Cache-Verzeichnisses.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/mc-saas/app/.next
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mc-panel
+
+[Install]
+WantedBy=multi-user.target
