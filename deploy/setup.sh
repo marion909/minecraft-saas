@@ -751,6 +751,24 @@ verify() {
   check "Router-API"           "curl -fsS -o /dev/null http://127.0.0.1:8080/routes"
   check "Port 25565 offen"     "ss -lnt | grep -q ':25565'"
 
+  # Diese drei fehlten, und deshalb meldete die Abnahme einmal Erfolg,
+  # während Caddy in einer Neustartschleife hing: Die Prüfung oben spricht
+  # das Panel direkt auf 3000 an und geht damit an Caddy vorbei.
+  check "Caddy lauscht auf 80"  "ss -lnt | grep -qE ':80\b'"
+  check "Caddy lauscht auf 443" "ss -lnt | grep -qE ':443\b'"
+  check "Panel durch Caddy"     "curl -fsS -o /dev/null -H 'Host: $PANEL_HOST' http://127.0.0.1/"
+
+  local looping
+  looping="$(docker ps --format '{{.Names}} {{.Status}}' | grep -i restarting || true)"
+  if [ -n "$looping" ]; then
+    warn "Container in Neustartschleife:"
+    printf '     %s\n' "$looping"
+    printf '     %sUrsache: docker compose -f %s/deploy/docker-compose.prod.yml logs%s\n' "$D" "$APP_DIR" "$N"
+    fails=$((fails + 1))
+  else
+    ok "Kein Container in einer Neustartschleife"
+  fi
+
   # Sicherheitsprüfung: Außer mc-router darf nichts an 0.0.0.0 hängen.
   local exposed
   exposed="$(docker ps --format '{{.Names}} {{.Ports}}' | grep '0.0.0.0' | grep -v 'mc-router' || true)"

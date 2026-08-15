@@ -60,6 +60,12 @@ services:
     image: caddy:2-alpine
     restart: unless-stopped
     network_mode: host
+    # Das Caddyfile liest {$PANEL_HOST} und {$ACME_EMAIL} aus der Umgebung
+    # des Containers, nicht aus der von docker compose. Ohne diesen Block
+    # sind beide leer, und Caddy bricht schon beim Einlesen ab.
+    environment:
+      PANEL_HOST: ${PANEL_HOST:?PANEL_HOST fehlt}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL fehlt}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
