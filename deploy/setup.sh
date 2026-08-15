@@ -679,6 +679,14 @@ start_infra() {
   step "Postgres, Redis, Router und Caddy starten"
 
   cd "$APP_DIR/deploy"
+
+  # docker compose sucht seine .env im Verzeichnis der Compose-Datei; die
+  # echte liegt eine Ebene höher. Das Skript selbst kommt ohne aus, weil es
+  # die Werte vorher exportiert — jeder von Hand abgesetzte compose-Befehl
+  # scheitert aber an "POSTGRES_PASSWORD fehlt". Der Verweis behebt das für
+  # ps, logs, restart und alles andere.
+  [ -e .env ] || ln -s ../.env .env
+
   POSTGRES_PASSWORD="$POSTGRES_PASSWORD" PANEL_HOST="$PANEL_HOST" ACME_EMAIL="$ACME_EMAIL" \
     docker compose -f docker-compose.prod.yml up -d >/dev/null 2>&1
 
