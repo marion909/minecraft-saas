@@ -48,6 +48,28 @@ export class ZfsStorage implements Storage {
       dataset,
     ]);
 
+    // Ein Dataset kann angelegt und trotzdem nicht eingehängt sein:
+    // `zfs create` meldet das nur als Warnung und endet mit 0. Ohne diese
+    // Prüfung scheitert erst das chown darauf, und die Meldung spricht
+    // dann von einer fehlenden Datei statt von der Ursache.
+    const { stdout: mounted } = await run("zfs", [
+      "get",
+      "-H",
+      "-o",
+      "value",
+      "mounted",
+      dataset,
+    ]);
+
+    if (mounted.trim() !== "yes") {
+      throw new Error(
+        `Dataset ${dataset} ist angelegt, aber nicht eingehängt. ` +
+          `Unter Linux verlangt das Einhängen mehr als \`zfs allow mount\` — ` +
+          `prüfe die Rechte des Dienstkontos in mc-agent.service. ` +
+          `Nachsehen mit: zfs get mounted,mountpoint ${dataset}`,
+      );
+    }
+
     // Das itzg-Image läuft als UID 1000; gehört das Verzeichnis root,
     // startet der Server nicht.
     const target = this.path(serverId);
