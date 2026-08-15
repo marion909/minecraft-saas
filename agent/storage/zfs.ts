@@ -2,17 +2,20 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import { datasetName } from "../naming.ts";
-import { CONTAINER_GID, CONTAINER_UID } from "../spec.ts";
 import type { SnapshotInfo, Storage, Usage } from "./types.ts";
 
 const run = promisify(execFile);
+
+/** Root-eigenes Skript für die Schritte, die Benutzer-ID 0 verlangen. */
+const HELPER = "/usr/local/sbin/mc-zfs-helper";
 
 /**
  * ZFS-Treiber. Alle Aufrufe gehen über execFile mit Argument-Array —
  * nie über eine Shell. Damit kann auch ein durchgerutschter Name kein
  * zweites Kommando anhängen.
  *
- * Rechte kommen aus `zfs allow` für das Dienstkonto, siehe Host-Runbook.
+ * Die meisten Rechte kommen aus `zfs allow` für das Dienstkonto. Was
+ * ein- oder aushängt, geht über den Helfer; siehe #privileged.
  */
 export class ZfsStorage implements Storage {
   readonly kind = "zfs" as const;
@@ -24,6 +27,32 @@ export class ZfsStorage implements Storage {
   constructor(pool: string, mountRoot: string) {
     this.pool = pool;
     this.mountRoot = mountRoot;
+  }
+
+  /**
+   * Einhängen, Zerstören und Zurückrollen verlangen unter Linux
+   * Benutzer-ID 0. `zfs allow` deckt das nicht ab, und CAP_SYS_ADMIN
+   * genügt ZFS ebenfalls nicht — die Prüfung hängt an der echten
+   * Benutzer-ID, nicht an der Capability.
+   *
+   * Deshalb genau diese drei Schritte über ein root-eigenes Skript mit
+   * eigener Argumentprüfung. Alles andere — anlegen, Quota setzen,
+   * auflisten, Snapshots — läuft weiter unprivilegiert über `zfs allow`.
+   */
+  async #privileged(...args: string[]): Promise<void> {
+    try {
+      await run("sudo", ["-n", HELPER, ...args]);
+    } catch (error) {
+      const detail =
+        typeof error === "object" && error !== null && "stderr" in error
+          ? String((error as { stderr: unknown }).stderr).trim()
+          : String(error);
+
+      throw new Error(
+        `${HELPER} ${args.join(" ")} fehlgeschlagen: ${detail} — ` +
+          `liegt der Helfer dort und erlaubt /etc/sudoers.d/mc-agent ihn?`,
+      );
+    }
   }
 
   path(serverId: string): string {
@@ -48,10 +77,12 @@ export class ZfsStorage implements Storage {
       dataset,
     ]);
 
-    // Ein Dataset kann angelegt und trotzdem nicht eingehängt sein:
-    // `zfs create` meldet das nur als Warnung und endet mit 0. Ohne diese
-    // Prüfung scheitert erst das chown darauf, und die Meldung spricht
-    // dann von einer fehlenden Datei statt von der Ursache.
+    // `zfs create` versucht selbst einzuhängen und scheitert daran als
+    // Dienstkonto — gemeldet nur als Warnung, der Rückgabewert bleibt 0.
+    // Der Helfer zieht es nach und übereignet den Einhängepunkt gleich
+    // dem Container-Benutzer (das itzg-Image läuft als UID 1000).
+    await this.#privileged("mount", dataset);
+
     const { stdout: mounted } = await run("zfs", [
       "get",
       "-H",
@@ -64,18 +95,11 @@ export class ZfsStorage implements Storage {
     if (mounted.trim() !== "yes") {
       throw new Error(
         `Dataset ${dataset} ist angelegt, aber nicht eingehängt. ` +
-          `Unter Linux verlangt das Einhängen mehr als \`zfs allow mount\` — ` +
-          `prüfe die Rechte des Dienstkontos in mc-agent.service. ` +
           `Nachsehen mit: zfs get mounted,mountpoint ${dataset}`,
       );
     }
 
-    // Das itzg-Image läuft als UID 1000; gehört das Verzeichnis root,
-    // startet der Server nicht.
-    const target = this.path(serverId);
-    await run("chown", [`${CONTAINER_UID}:${CONTAINER_GID}`, target]);
-
-    return target;
+    return this.path(serverId);
   }
 
   async setQuota(serverId: string, quotaMb: number): Promise<void> {
@@ -110,9 +134,8 @@ export class ZfsStorage implements Storage {
   }
 
   async destroy(serverId: string): Promise<void> {
-    // -r nimmt die Snapshots mit; ohne das schlägt destroy fehl, sobald
-    // je ein Backup angelegt wurde.
-    await run("zfs", ["destroy", "-r", this.#dataset(serverId)]);
+    // Zerstören hängt vorher aus, und das geht nur als root.
+    await this.#privileged("destroy", this.#dataset(serverId));
   }
 
   async snapshot(serverId: string, label: string): Promise<void> {
@@ -148,8 +171,8 @@ export class ZfsStorage implements Storage {
   }
 
   async rollback(serverId: string, label: string): Promise<void> {
-    // -r verwirft neuere Snapshots, die sonst den Rollback blockieren.
-    await run("zfs", ["rollback", "-r", `${this.#dataset(serverId)}@${label}`]);
+    // Zurückrollen hängt das Dateisystem zwischendurch aus.
+    await this.#privileged("rollback", this.#dataset(serverId), label);
   }
 
   async destroySnapshot(serverId: string, label: string): Promise<void> {

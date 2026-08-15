@@ -17,33 +17,34 @@ ExecStart=/usr/bin/node agent/index.ts
 Restart=always
 RestartSec=5
 
-# Der Agent hält den Docker-Socket und ist damit root-gleichwertig. Was
-# sich trotzdem einschränken lässt, ist eingeschränkt.
-NoNewPrivileges=true
-ProtectKernelModules=true
-RestrictSUIDSGID=true
-RestrictRealtime=true
-LockPersonality=true
-
-# Hier fehlen mit Absicht ProtectSystem, ProtectHome, PrivateTmp,
-# ProtectKernelTunables und ProtectControlGroups.
+# Diese Unit ist bewusst ungehärtet. Die Begründung gehört hierher, weil
+# der Reflex sonst ist, die üblichen Protect*-Zeilen wieder einzusetzen —
+# und dann bricht wieder etwas, ohne eine Fehlermeldung zu hinterlassen.
 #
-# Jede dieser Optionen gibt dem Dienst einen eigenen Mount-Namensraum, und
-# systemd setzt dessen Weitergabe auf "slave": Einhängungen vom Host kommen
-# herein, Einhängungen des Dienstes gehen nicht hinaus. Der Agent hängt
-# aber pro Server ein ZFS-Dataset ein, und Docker läuft im Namensraum des
-# Hosts. Der Container bekäme also ein leeres Verzeichnis untergeschoben
-# und legte die Welt am falschen Ort ab — ohne Fehlermeldung.
+# 1. ProtectSystem, ProtectHome, PrivateTmp, ProtectKernelTunables und
+#    ProtectControlGroups geben dem Dienst je einen eigenen
+#    Mount-Namensraum, dessen Weitergabe systemd auf "slave" setzt:
+#    Einhängungen vom Host kommen herein, eigene gehen nicht hinaus. Der
+#    Agent hängt pro Server ein ZFS-Dataset ein und Docker läuft im
+#    Namensraum des Hosts — der Container bekäme ein leeres Verzeichnis
+#    untergeschoben und legte die Welt am falschen Ort ab.
 #
-# ReadWritePaths fällt damit ebenfalls weg; es setzt einen Namensraum
-# voraus. Die Schreibgrenze zieht jetzt allein die Dateisystem-Rechte:
-# mcagent gehört /srv/mc und /srv/backups, sonst nichts.
-
-# CAP_SYS_ADMIN zum Einhängen, CAP_CHOWN für den Besitzerwechsel auf
-# UID 1000 — das itzg-Image läuft darunter. Beide müssen ambient sein,
-# im Bounding-Set allein wirken sie nicht.
-AmbientCapabilities=CAP_SYS_ADMIN CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE
-CapabilityBoundingSet=CAP_SYS_ADMIN CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE
+# 2. NoNewPrivileges lässt sudo scheitern, und der Agent braucht sudo für
+#    mc-zfs-helper: Ein- und Aushängen verlangt unter Linux Benutzer-ID 0,
+#    `zfs allow` deckt es nicht ab und CAP_SYS_ADMIN genügt ZFS auch nicht.
+#    ProtectKernelModules, RestrictSUIDSGID, RestrictRealtime und
+#    LockPersonality setzen NoNewPrivileges implizit mit — deshalb sind
+#    auch sie hier nicht zu gebrauchen.
+#
+# Was bleibt: Der Agent läuft als mcagent, nicht als root. Die
+# Dateiverwaltung — der einzige Teil, der Benutzereingaben in Pfade
+# übersetzt — arbeitet damit unprivilegiert, und die Schreibgrenze ziehen
+# die Dateisystem-Rechte: mcagent gehört /srv/mc und /srv/backups.
+#
+# Ehrlich dazu: Über die Docker-Gruppe ist mcagent auf diesem Host
+# root-gleichwertig, sobald jemand Code darunter ausführen kann. Die
+# Trennung hilft gegen Fehler im Agent, nicht gegen einen Angreifer, der
+# ihn schon übernommen hat.
 
 StandardOutput=journal
 StandardError=journal

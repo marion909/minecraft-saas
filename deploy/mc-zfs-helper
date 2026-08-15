@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+#
+# Die ZFS-Schritte, die unter Linux Benutzer-ID 0 verlangen.
+#
+# `zfs allow` deckt das Einhängen nicht ab, und CAP_SYS_ADMIN genügt ZFS
+# ebenfalls nicht — die Prüfung hängt an der echten Benutzer-ID. Statt den
+# ganzen Agent als root laufen zu lassen, bekommt genau dieses Skript root
+# über eine sudo-Regel. Der Rest des Agents, insbesondere die
+# Dateiverwaltung mit ihren Benutzereingaben, bleibt unprivilegiert.
+#
+#   mc-zfs-helper mount    <dataset>
+#   mc-zfs-helper destroy  <dataset>
+#   mc-zfs-helper rollback <dataset> <snapshot>
+#
+# Die Argumente kommen vom Agent und sind dort erzeugt, nicht eingetippt.
+# Geprüft werden sie hier trotzdem: Wer sudo-Rechte vergibt, verlässt sich
+# nicht darauf, dass der Aufrufer sich benimmt.
+#
+set -euo pipefail
+
+verb="${1:-}"
+dataset="${2:-}"
+
+# Muss unterhalb von <pool>/mc/srv- liegen. Damit sind der Systempool, die
+# Backup-Datasets und der Elternknoten selbst außer Reichweite.
+case "$dataset" in
+  */mc/srv-*) ;;
+  *)
+    printf 'Nur Datasets unterhalb von .../mc/srv-, nicht "%s"\n' "$dataset" >&2
+    exit 1
+    ;;
+esac
+
+# Keine Leerzeichen, keine Optionen, kein @ — Snapshots kommen getrennt.
+case "$dataset" in
+  -*|*[!a-zA-Z0-9/_.-]*)
+    printf 'Unerlaubtes Zeichen im Dataset-Namen.\n' >&2
+    exit 1
+    ;;
+esac
+
+case "$verb" in
+  mount)
+    # Wiederholbar: Ein bereits eingehängtes Dataset ist kein Fehler.
+    if [ "$(zfs get -H -o value mounted "$dataset")" != "yes" ]; then
+      zfs mount "$dataset"
+    fi
+
+    mountpoint="$(zfs get -H -o value mountpoint "$dataset")"
+    case "$mountpoint" in
+      /srv/mc/srv-*) ;;
+      *)
+        printf 'Unerwarteter Einhängepunkt "%s".\n' "$mountpoint" >&2
+        exit 1
+        ;;
+    esac
+    [ -d "$mountpoint" ] || { printf 'Einhängepunkt fehlt nach dem Einhängen.\n' >&2; exit 1; }
+
+    # Das itzg-Image läuft als UID 1000; gehört das Verzeichnis root,
+    # startet der Server nicht.
+    chown 1000:1000 "$mountpoint"
+    ;;
+
+  destroy)
+    # -r nimmt die Snapshots mit; ohne das schlägt destroy fehl, sobald je
+    # ein Backup angelegt wurde. Das Aushängen erledigt zfs dabei selbst,
+    # und auch das geht nur als root.
+    zfs destroy -r "$dataset"
+    ;;
+
+  rollback)
+    snapshot="${3:-}"
+    case "$snapshot" in
+      ""|-*|*[!a-zA-Z0-9_.-]*)
+        printf 'Unerlaubter Snapshot-Name "%s".\n' "$snapshot" >&2
+        exit 1
+        ;;
+    esac
+    # -r verwirft neuere Snapshots, die sonst den Rollback blockieren.
+    zfs rollback -r "$dataset@$snapshot"
+    ;;
+
+  *)
+    printf 'Unbekanntes Verb "%s". Erlaubt: mount, destroy, rollback.\n' "$verb" >&2
+    exit 1
+    ;;
+esac

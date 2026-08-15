@@ -546,8 +546,10 @@ create_users() {
 
   if [ "${SKIP_ZFS:-0}" != "1" ] && zpool list "$ZFS_POOL" >/dev/null 2>&1; then
     # Gezielte Rechte statt pauschalem sudo: nur unterhalb dieser Datasets.
-    zfs allow -u mcagent create,destroy,mount,quota,snapshot,rollback,hold,receive "$ZFS_POOL/mc"
-    zfs allow -u mcagent create,destroy,mount,snapshot,receive "$ZFS_POOL/backups"
+    # `mount` steht bewusst nicht dabei — die Delegation deckt es unter
+    # Linux nicht ab, dafür gibt es den Helfer weiter unten.
+    zfs allow -u mcagent create,destroy,quota,snapshot,rollback,hold,receive "$ZFS_POOL/mc"
+    zfs allow -u mcagent create,destroy,snapshot,receive "$ZFS_POOL/backups"
     ok "ZFS-Rechte an mcagent delegiert"
   fi
 
@@ -719,6 +721,23 @@ init_database() {
 install_units() {
   step "systemd-Dienste einrichten"
 
+  # Ein- und Aushängen von ZFS-Datasets verlangt unter Linux Benutzer-ID 0:
+  # `zfs allow` deckt es nicht ab, CAP_SYS_ADMIN genügt ZFS auch nicht.
+  # Statt den ganzen Agent als root laufen zu lassen, bekommt genau dieses
+  # Skript root — es kennt drei Verben und prüft seine Argumente selbst.
+  if [ "${SKIP_ZFS:-0}" != "1" ]; then
+    install -m 0755 -o root -g root "$APP_DIR/deploy/mc-zfs-helper" /usr/local/sbin/mc-zfs-helper
+
+    local sudoers=/etc/sudoers.d/mc-agent
+    printf 'mcagent ALL=(root) NOPASSWD: /usr/local/sbin/mc-zfs-helper\n' > "$sudoers.neu"
+    chmod 0440 "$sudoers.neu"
+    # Erst prüfen, dann an Ort und Stelle: Eine kaputte Datei unter
+    # sudoers.d sperrt sudo für alle aus, auch für dich.
+    visudo -cf "$sudoers.neu" >/dev/null || { rm -f "$sudoers.neu"; die "sudoers-Regel ist ungültig."; }
+    mv "$sudoers.neu" "$sudoers"
+    ok "mc-zfs-helper installiert, sudo-Regel geprüft"
+  fi
+
   install -m 0644 "$APP_DIR/deploy/mc-agent.service" /etc/systemd/system/
   install -m 0644 "$APP_DIR/deploy/mc-panel.service" /etc/systemd/system/
   systemctl daemon-reload
@@ -754,6 +773,11 @@ verify() {
   # Diese drei fehlten, und deshalb meldete die Abnahme einmal Erfolg,
   # während Caddy in einer Neustartschleife hing: Die Prüfung oben spricht
   # das Panel direkt auf 3000 an und geht damit an Caddy vorbei.
+  # Ohne diese Prüfung fällt eine fehlende sudo-Regel erst auf, wenn der
+  # erste Nutzer einen Server anlegt.
+  check "mcagent darf den ZFS-Helfer" \
+    "[ '${SKIP_ZFS:-0}' = '1' ] || sudo -u mcagent sudo -n /usr/local/sbin/mc-zfs-helper 2>&1 | grep -q 'Unbekanntes Verb'"
+
   check "Caddy lauscht auf 80"  "ss -lnt | grep -qE ':80\b'"
   check "Caddy lauscht auf 443" "ss -lnt | grep -qE ':443\b'"
   check "Panel durch Caddy"     "curl -fsS -o /dev/null -H 'Host: $PANEL_HOST' http://127.0.0.1/"
