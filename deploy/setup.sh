@@ -546,10 +546,13 @@ create_users() {
 
   if [ "${SKIP_ZFS:-0}" != "1" ] && zpool list "$ZFS_POOL" >/dev/null 2>&1; then
     # Gezielte Rechte statt pauschalem sudo: nur unterhalb dieser Datasets.
-    # `mount` steht bewusst nicht dabei — die Delegation deckt es unter
-    # Linux nicht ab, dafür gibt es den Helfer weiter unten.
-    zfs allow -u mcagent create,destroy,quota,snapshot,rollback,hold,receive "$ZFS_POOL/mc"
-    zfs allow -u mcagent create,destroy,snapshot,receive "$ZFS_POOL/backups"
+    #
+    # `mount` muss dabei sein, obwohl das Einhängen selbst darüber nicht
+    # gelingt: ZFS verlangt die mount-Fähigkeit als Voraussetzung für
+    # create und destroy. Fehlt sie, scheitert schon `zfs create` mit
+    # "permission denied". Eingehängt wird trotzdem über mc-zfs-helper.
+    zfs allow -u mcagent create,destroy,mount,quota,snapshot,rollback,hold,receive "$ZFS_POOL/mc"
+    zfs allow -u mcagent create,destroy,mount,snapshot,receive "$ZFS_POOL/backups"
     ok "ZFS-Rechte an mcagent delegiert"
   fi
 

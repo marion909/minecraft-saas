@@ -46,6 +46,16 @@ RestartSec=5
 # Trennung hilft gegen Fehler im Agent, nicht gegen einen Angreifer, der
 # ihn schon übernommen hat.
 
+# Diese vier bleiben, und zwar ambient — im Bounding-Set allein wirken sie
+# nicht. Ohne CAP_SYS_ADMIN scheitert schon `zfs create` mit "permission
+# denied", obwohl die Delegation stimmt: ZFS verlangt für create die
+# mount-Fähigkeit gleich mit. Zum tatsächlichen Einhängen reicht die
+# Capability trotzdem nicht — dafür gibt es mc-zfs-helper.
+#
+# Bewusst ohne CapabilityBoundingSet: Ein enges Bounding-Set nähme auch
+# dem über sudo gestarteten Helfer die Rechte, die er braucht.
+AmbientCapabilities=CAP_SYS_ADMIN CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE
+
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=mc-agent
