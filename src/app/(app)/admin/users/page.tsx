@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { DeleteUserButton } from "@/components/delete-user-button";
 import { RoleSelect } from "@/components/role-select";
 import { db } from "@/lib/db";
 import { isAdmin } from "@/lib/roles";
@@ -36,7 +37,8 @@ export default async function UsersPage() {
       <p className="muted" style={{ maxWidth: "62ch" }}>
         Die öffentliche Registrierung ist abgeschaltet — Konten entstehen nur
         hier. Ein hier angelegtes Konto gilt sofort als bestätigt und braucht
-        keine Mail.
+        keine Mail. Löschen geht erst, wenn die Person keine Server mehr hat:
+        Welten und Sicherungen sollen nicht als Nebenwirkung verschwinden.
       </p>
 
       <div className="scroller">
@@ -48,6 +50,7 @@ export default async function UsersPage() {
               <th>Bestätigt</th>
               <th>Server</th>
               <th>Angelegt</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -85,6 +88,16 @@ export default async function UsersPage() {
                 </td>
                 <td className="num">{user._count.servers}</td>
                 <td className="num">{datum(user.createdAt)}</td>
+                <td>
+                  {user.id === session.user.id ? null : (
+                    <DeleteUserButton
+                      userId={user.id}
+                      name={user.name}
+                      email={user.email}
+                      serverCount={user._count.servers}
+                    />
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
