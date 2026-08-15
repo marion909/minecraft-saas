@@ -648,8 +648,12 @@ sudo docker ps --format '{{.Names}} {{.Ports}}'
 zpool list
 zfs list -o name,used,quota
 
-<span class="c"># Aktualisieren auf einen neueren Stand: derselbe Befehl wie beim ersten Mal.</span>
-<span class="c"># Nach der Domain fragt er nicht noch einmal, die liest er aus der .env.</span>
+<span class="c"># Aktualisieren, wenn sich nur der Code geändert hat — der Normalfall.</span>
+<span class="c"># Baut das Panel neu und startet es durch, fasst den Host nicht an.</span>
+sudo /opt/mc-saas/app/deploy/update.sh
+
+<span class="c"># Wenn sich am Host etwas ändern soll: das große Skript. Nach der</span>
+<span class="c"># Domain fragt es nicht noch einmal, die liest es aus der .env.</span>
 sudo bash ~/setup.sh</code></pre>
       <div class="callout risk">
         <strong>Nicht von Hand bauen.</strong>

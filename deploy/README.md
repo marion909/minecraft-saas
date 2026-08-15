@@ -100,30 +100,42 @@ einfach erneut starten. Die `.env` wird dabei **nicht** überschrieben; die
 Geheimnisse bleiben, und Domain, Hostnamen und ACME-Adresse liest das
 Skript daraus zurück statt erneut zu fragen.
 
-Zum Aktualisieren auf einen neuen Stand reicht deshalb:
+## Aktualisieren
+
+Für reine Code-Änderungen — der Normalfall:
+
+```bash
+sudo /opt/mc-saas/app/deploy/update.sh
+```
+
+Holt den aktuellen `main`, baut das Panel und startet es durch. Den Host
+fasst es nicht an: keine Pakete, kein ZFS, kein Docker, keine Firewall.
+
+Es sieht nach, was sich geändert hat, und macht nur das Nötige:
+
+| Geändert | Folge |
+| --- | --- |
+| `pnpm-lock.yaml` | `pnpm install` |
+| `prisma/schema.prisma` | `pnpm db:generate`, dazu der Hinweis auf `db:push` |
+| `agent/…` | `mc-agent` wird neu gestartet |
+| `deploy/*.service` | Units erneuert, `daemon-reload` |
+| `deploy/Caddyfile`, Compose | Container abgeglichen |
+
+Hat sich nichts geändert, bricht es sofort ab, statt sinnlos zu bauen.
+
+Wenn sich am **Host** etwas ändern soll — neue Pakete, andere
+Kernel-Werte, ein zweiter Pool —, dann `setup.sh`:
 
 ```bash
 sudo ./deploy/setup.sh
 ```
 
-Das holt den aktuellen `main`, baut neu und startet die Dienste durch.
-
 **Nicht von Hand bauen.** `pnpm` kommt von corepack, und corepack legt
 seinen Cache unter `$HOME` an — für die Dienstkonten ist das
 `/opt/mc-saas`, wo sie nicht schreiben dürfen. Ein `sudo -u mcpanel pnpm
 build` scheitert also an `EACCES`. Gebaut wird als root, und danach muss
-`.next` dem Panel gehören, weil `next start` dort seinen Cache schreibt:
-
-```bash
-sudo pnpm build
-sudo chown -R root:mcsaas   /opt/mc-saas/app
-sudo chmod -R g+rX          /opt/mc-saas/app
-sudo chown -R mcpanel:mcsaas /opt/mc-saas/app/.next
-sudo systemctl restart mc-panel
-```
-
-Genau diese Reihenfolge macht das Skript in Schritt 13 — noch ein Grund,
-es einfach laufen zu lassen.
+`.next` dem Panel gehören, weil `next start` dort seinen Cache schreibt.
+Genau darum gibt es `update.sh`.
 
 ## Nach dem Skript
 
