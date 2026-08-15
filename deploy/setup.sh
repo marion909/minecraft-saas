@@ -189,11 +189,23 @@ stable_name() {
 disk_free_mb() {
   local out sectors secsize
   [ "$(lsblk -dno PTTYPE "$1" 2>/dev/null || true)" = "gpt" ] || { printf '0\n'; return 0; }
+
+  # Sektorgröße von lsblk, nicht von sgdisk. sgdisk schreibt sie je nach
+  # Platte als "Sector size (logical/physical): 512/512 bytes" oder ohne
+  # den physischen Teil — an dieser Formatfrage ist die Erkennung schon
+  # einmal gescheitert und hat dann stillschweigend 0 gemeldet.
+  secsize="$(lsblk -dno LOG-SEC "$1" 2>/dev/null | tr -d '[:space:]')"
+  case "${secsize:-x}" in ''|*[!0-9]*) secsize=512 ;; esac
+
+  command -v sgdisk >/dev/null 2>&1 || { printf '0\n'; return 0; }
   out="$(sgdisk -p "$1" 2>/dev/null)" || { printf '0\n'; return 0; }
-  sectors="$(printf '%s\n' "$out" | awk '/Total free space is/ {print $5; exit}')"
-  secsize="$(printf '%s\n' "$out" | awk '/Logical sector size/ {print $4; exit}')"
-  case "${sectors:-x}" in *[!0-9]*) printf '0\n'; return 0 ;; esac
-  case "${secsize:-x}" in *[!0-9]*) printf '0\n'; return 0 ;; esac
+
+  # Erstes reines Zahlenfeld der Zeile nehmen, statt auf einer festen
+  # Spaltennummer zu bestehen.
+  sectors="$(printf '%s\n' "$out" |
+    awk '/Total free space is/ { for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+$/) { print $i; exit } }')"
+  case "${sectors:-x}" in ''|*[!0-9]*) printf '0\n'; return 0 ;; esac
+
   printf '%s\n' $((sectors * secsize / 1024 / 1024))
 }
 
@@ -247,7 +259,12 @@ carve_partition() {
   sgdisk -n 0:0:0 -t 0:bf01 -c 0:mc-saas "$disk" >/dev/null 2>&1 ||
     die "Partition anlegen auf $disk fehlgeschlagen."
 
-  partprobe "$disk" >/dev/null 2>&1 || partx -a "$disk" >/dev/null 2>&1 || true
+  # Beide, nicht das eine oder das andere: Liegt die Wurzel auf derselben
+  # Platte, kann der Kernel die Tabelle nicht neu einlesen — partprobe
+  # meldet das aber nicht immer als Fehler. partx -a hängt die neue
+  # Partition einzeln ein und stört die bestehenden nicht.
+  partprobe "$disk" >/dev/null 2>&1 || true
+  partx -a "$disk" >/dev/null 2>&1 || true
   udevadm settle >/dev/null 2>&1 || true
 
   after="$(lsblk -pnro NAME "$disk" | tail -n +2 | sort)"
@@ -329,6 +346,10 @@ setup_zfs() {
     if [ -z "${ZFS_DISK:-}" ]; then
       show_block_devices "$root_src"
       offer_free_space
+      # Ohne diese Zeile sah ein Fehler in der Suche genauso aus wie eine
+      # volle Platte: Die Frage nach dem Gerätepfad kam einfach kommentarlos.
+      [ -n "${ZFS_DISK:-}" ] ||
+        warn "Nichts gefunden, was ich selbst herausschneiden könnte — weder unpartitionierten Platz noch freie LVM-Extents."
     fi
 
     ask ZFS_DISK "Was wird der Pool? (Gerätepfad)"
