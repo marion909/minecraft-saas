@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
@@ -76,8 +75,9 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="muted">
-          Noch kein Konto? <Link href="/register">Registrieren</Link>
+        <p className="hint">
+          Konten legt die Verwaltung an — eine Selbstregistrierung gibt es
+          nicht.
         </p>
       </div>
     </main>

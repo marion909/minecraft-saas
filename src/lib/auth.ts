@@ -15,8 +15,16 @@ export const auth = betterAuth({
 
   emailAndPassword: {
     enabled: true,
-    // Ohne verifizierte Adresse kein Server: das ist der erste und
-    // billigste Riegel gegen massenhaft angelegte Wegwerf-Accounts.
+
+    // Konten entstehen nur im Admin-Bereich. Das hier ist der Riegel, der
+    // wirklich zählt: Die Seite /register zu entfernen genügt nicht,
+    // solange POST /api/auth/sign-up/email antwortet — den Endpunkt kennt
+    // jeder, der schon einmal better-auth gesehen hat.
+    disableSignUp: true,
+
+    // Bleibt gesetzt, obwohl niemand mehr eine Bestätigungsmail bekommt:
+    // Fällt disableSignUp irgendwann wieder, ist die Sperre noch da.
+    // Vom Admin angelegte Konten setzen emailVerified selbst.
     requireEmailVerification: true,
     minPasswordLength: 10,
     maxPasswordLength: 128,

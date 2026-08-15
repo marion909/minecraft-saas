@@ -28,6 +28,9 @@ export default async function AdminPage() {
           {nodes.length === 1 ? "Node" : "Nodes"}
         </p>
         <div className="actions">
+          <Link className="btn btn-quiet" href="/admin/users">
+            Konten verwalten
+          </Link>
           <Link className="btn btn-quiet" href="/admin/plans">
             Tarife verwalten
           </Link>
