@@ -20,21 +20,29 @@ RestartSec=5
 # Der Agent hält den Docker-Socket und ist damit root-gleichwertig. Was
 # sich trotzdem einschränken lässt, ist eingeschränkt.
 NoNewPrivileges=true
-PrivateTmp=true
-ProtectHome=true
-ProtectKernelTunables=true
 ProtectKernelModules=true
-ProtectControlGroups=true
 RestrictSUIDSGID=true
 RestrictRealtime=true
 LockPersonality=true
 
-# Schreiben darf er nur dort, wo Serverdaten und Backups liegen.
-ProtectSystem=full
-ReadWritePaths=/srv/mc /srv/backups
+# Hier fehlen mit Absicht ProtectSystem, ProtectHome, PrivateTmp,
+# ProtectKernelTunables und ProtectControlGroups.
+#
+# Jede dieser Optionen gibt dem Dienst einen eigenen Mount-Namensraum, und
+# systemd setzt dessen Weitergabe auf "slave": Einhängungen vom Host kommen
+# herein, Einhängungen des Dienstes gehen nicht hinaus. Der Agent hängt
+# aber pro Server ein ZFS-Dataset ein, und Docker läuft im Namensraum des
+# Hosts. Der Container bekäme also ein leeres Verzeichnis untergeschoben
+# und legte die Welt am falschen Ort ab — ohne Fehlermeldung.
+#
+# ReadWritePaths fällt damit ebenfalls weg; es setzt einen Namensraum
+# voraus. Die Schreibgrenze zieht jetzt allein die Dateisystem-Rechte:
+# mcagent gehört /srv/mc und /srv/backups, sonst nichts.
 
-# ZFS-Kommandos brauchen unter Linux CAP_SYS_ADMIN, auch mit `zfs allow`.
-AmbientCapabilities=CAP_SYS_ADMIN
+# CAP_SYS_ADMIN zum Einhängen, CAP_CHOWN für den Besitzerwechsel auf
+# UID 1000 — das itzg-Image läuft darunter. Beide müssen ambient sein,
+# im Bounding-Set allein wirken sie nicht.
+AmbientCapabilities=CAP_SYS_ADMIN CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE
 CapabilityBoundingSet=CAP_SYS_ADMIN CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE
 
 StandardOutput=journal
