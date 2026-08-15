@@ -1,0 +1,16 @@
+# Shell-Skripte müssen LF behalten. Klont jemand unter Windows mit
+# autocrlf=true, wird aus der Shebang-Zeile "#!/usr/bin/env bash\r" — und
+# der Linux-Host antwortet mit "bad interpreter: No such file or directory".
+*.sh text eol=lf
+
+# Dasselbe für alles, was auf dem Host von einem Interpreter gelesen wird.
+*.service text eol=lf
+Caddyfile   text eol=lf
+
+# Der Lockfile gehört ins Repo, aber nicht in jeden Diff.
+pnpm-lock.yaml -diff linguist-generated
+
+# Die Planungsdokumente sind Fließtext, kein Quellcode — sonst bestimmen
+# sie allein die Sprachstatistik des Repos.
+PLAN.html       linguist-documentation
+HOST-SETUP.html linguist-documentation
