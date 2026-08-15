@@ -1,0 +1,627 @@
+<title>Minecraft-Host Einrichtung</title>
+<style>
+  :root {
+    --ground: #F3F6F4;
+    --surface: #FFFFFF;
+    --surface-2: #E7ECE8;
+    --ink: #131B17;
+    --ink-2: #44514A;
+    --ink-3: #76847B;
+    --rule: #D2DAD4;
+    --rule-2: #BCC7C0;
+    --accent: #2C6B4C;
+    --accent-soft: #E1EDE6;
+    --warn: #8E640F;
+    --warn-soft: #F4EAD5;
+    --crit: #93402F;
+    --crit-soft: #F5E2DD;
+    --shadow: 0 1px 2px rgba(19,27,23,.05), 0 8px 24px -18px rgba(19,27,23,.35);
+
+    --f-display: "Iowan Old Style", Charter, "Palatino Linotype", Palatino, Georgia, ui-serif, serif;
+    --f-body: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --f-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0F1412; --surface: #161D19; --surface-2: #1E2722;
+      --ink: #DDE5DF; --ink-2: #99A79F; --ink-3: #72817A;
+      --rule: #28322C; --rule-2: #37443C;
+      --accent: #64B085; --accent-soft: #19291F;
+      --warn: #D0A054; --warn-soft: #2B2416;
+      --crit: #D08069; --crit-soft: #2C1C17;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -18px rgba(0,0,0,.8);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0F1412; --surface: #161D19; --surface-2: #1E2722;
+    --ink: #DDE5DF; --ink-2: #99A79F; --ink-3: #72817A;
+    --rule: #28322C; --rule-2: #37443C;
+    --accent: #64B085; --accent-soft: #19291F;
+    --warn: #D0A054; --warn-soft: #2B2416;
+    --crit: #D08069; --crit-soft: #2C1C17;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -18px rgba(0,0,0,.8);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+    padding: 0 0 8rem;
+  }
+
+  .wrap {
+    display: grid;
+    grid-template-columns: 1fr;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+  }
+  @media (min-width: 1080px) {
+    .wrap { grid-template-columns: 190px minmax(0, 1fr); gap: 4rem; padding: 0 2.5rem; }
+  }
+
+  .masthead {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--rule);
+    padding: 4.5rem 0 2.25rem;
+    margin-bottom: 3rem;
+    display: flex; flex-direction: column; gap: 1rem;
+  }
+  .eyebrow {
+    font-family: var(--f-mono); font-size: .7rem; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+  h1 {
+    font-family: var(--f-display);
+    font-size: clamp(2.4rem, 6vw, 3.6rem);
+    line-height: 1.06; letter-spacing: -.02em; font-weight: 600;
+    text-wrap: balance; margin: 0;
+  }
+  .standfirst { font-size: 1.075rem; color: var(--ink-2); max-width: 62ch; margin: 0; }
+  .meta-row {
+    display: flex; flex-wrap: wrap; gap: .5rem 1.5rem;
+    font-family: var(--f-mono); font-size: .72rem; color: var(--ink-3);
+    letter-spacing: .04em; padding-top: .5rem;
+  }
+  .meta-row b { color: var(--ink-2); font-weight: 500; }
+
+  nav.rail { display: none; }
+  @media (min-width: 1080px) {
+    nav.rail {
+      display: block; position: sticky; top: 2rem; align-self: start;
+      max-height: calc(100vh - 4rem); overflow-y: auto; padding-bottom: 2rem;
+    }
+    nav.rail ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .1rem; }
+    nav.rail a {
+      display: flex; gap: .6rem; font-family: var(--f-mono); font-size: .74rem;
+      color: var(--ink-3); text-decoration: none; padding: .3rem 0; border-radius: 2px;
+    }
+    nav.rail a:hover { color: var(--accent); }
+    nav.rail a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    nav.rail a .n { color: var(--rule-2); font-variant-numeric: tabular-nums; }
+  }
+
+  main { min-width: 0; display: flex; flex-direction: column; gap: 3.5rem; }
+  section { display: flex; flex-direction: column; gap: 1.1rem; scroll-margin-top: 2rem; }
+
+  h2 {
+    font-family: var(--f-display); font-size: 1.65rem; line-height: 1.2;
+    letter-spacing: -.012em; font-weight: 600; margin: 0;
+    padding-bottom: .7rem; border-bottom: 1px solid var(--rule); text-wrap: balance;
+  }
+  h3 {
+    font-family: var(--f-body); font-size: .82rem; font-weight: 650;
+    letter-spacing: .04em; text-transform: uppercase; color: var(--ink-2); margin: .9rem 0 0;
+  }
+  p { margin: 0; max-width: 68ch; }
+  p + p { margin-top: -.2rem; }
+  a { color: var(--accent); }
+
+  ul.list { margin: 0; padding-left: 1.15rem; display: flex; flex-direction: column; gap: .45rem; max-width: 68ch; }
+  ul.list li::marker { color: var(--rule-2); }
+
+  code {
+    font-family: var(--f-mono); font-size: .855em; background: var(--surface-2);
+    padding: .1em .35em; border-radius: 3px; color: var(--ink);
+  }
+  pre {
+    margin: 0; background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 5px; padding: 1rem 1.1rem; overflow-x: auto; box-shadow: var(--shadow);
+  }
+  pre code { background: none; padding: 0; font-size: .78rem; line-height: 1.75; color: var(--ink-2); white-space: pre; }
+  pre .c { color: var(--ink-3); font-style: italic; }
+  pre .p { color: var(--accent); }
+
+  .scroller { overflow-x: auto; border: 1px solid var(--rule); border-radius: 5px; background: var(--surface); box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; font-size: .875rem; }
+  th, td { text-align: left; padding: .68rem .9rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  thead th {
+    font-family: var(--f-mono); font-size: .68rem; text-transform: uppercase;
+    letter-spacing: .1em; color: var(--ink-3); font-weight: 500;
+    background: var(--surface-2); white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td code { font-size: .8em; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .chip {
+    display: inline-block; font-family: var(--f-mono); font-size: .66rem;
+    letter-spacing: .07em; text-transform: uppercase; padding: .18em .5em;
+    border-radius: 3px; white-space: nowrap; font-weight: 500;
+  }
+  .chip.crit { background: var(--crit-soft); color: var(--crit); }
+  .chip.warn { background: var(--warn-soft); color: var(--warn); }
+  .chip.ok   { background: var(--accent-soft); color: var(--accent); }
+
+  /* steps */
+  .step { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+  .step-head { display: flex; align-items: baseline; gap: .8rem; border-bottom: 1px solid var(--rule); padding-bottom: .7rem; }
+  .step-head .sn {
+    font-family: var(--f-mono); font-size: .78rem; font-weight: 600;
+    color: var(--accent); font-variant-numeric: tabular-nums; flex: none;
+  }
+  .step-head h2 { border: none; padding: 0; }
+
+  .callout {
+    border-left: 2px solid var(--accent); background: var(--accent-soft);
+    padding: .9rem 1.1rem; border-radius: 0 4px 4px 0; font-size: .89rem;
+    color: var(--ink-2); max-width: 70ch; display: flex; flex-direction: column; gap: .4rem;
+  }
+  .callout strong { color: var(--ink); font-weight: 620; }
+  .callout.risk { border-left-color: var(--warn); background: var(--warn-soft); }
+  .callout.stop { border-left-color: var(--crit); background: var(--crit-soft); }
+
+  .check { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--rule); border-radius: 5px; overflow: hidden; background: var(--surface); box-shadow: var(--shadow); }
+  .check-row { display: grid; grid-template-columns: 1fr; gap: .3rem; padding: .85rem 1.1rem; border-bottom: 1px solid var(--rule); }
+  @media (min-width: 700px) { .check-row { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 0 1.5rem; align-items: baseline; } }
+  .check-row:last-child { border-bottom: none; }
+  .check-row .cmd { font-family: var(--f-mono); font-size: .76rem; color: var(--ink); overflow-x: auto; }
+  .check-row .exp { font-size: .82rem; color: var(--ink-3); }
+
+  .endnote { grid-column: 1 / -1; border-top: 1px solid var(--rule); margin-top: 4rem; padding-top: 1.25rem; font-family: var(--f-mono); font-size: .72rem; color: var(--ink-3); letter-spacing: .03em; }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Runbook · Vorbereitung vor P0</div>
+    <h1>Minecraft-Host Einrichtung</h1>
+    <p class="standfirst">Der Linux-Rechner, auf dem alles läuft — von der leeren Platte bis zu dem Punkt, an dem das SaaS-Repo nur noch <code>docker compose up</code> braucht. Reihenfolge einhalten: Schritt 2 und 3 sind nachträglich nur mit Datenmigration zu ändern.</p>
+    <div class="meta-row">
+      <span><b>Dauer</b> ca. 90 Minuten</span>
+      <span><b>Zugang</b> Root oder sudo</span>
+      <span><b>Ergebnis</b> Docker + ZFS + Quotas einsatzbereit</span>
+    </div>
+  </header>
+
+  <nav class="rail" aria-label="Inhalt">
+    <ol>
+      <li><a href="#warum"><span class="n">00</span> Warum ZFS</a></li>
+      <li><a href="#hardware"><span class="n">01</span> Hardware</a></li>
+      <li><a href="#os"><span class="n">02</span> Betriebssystem</a></li>
+      <li><a href="#pool"><span class="n">03</span> ZFS-Pool</a></li>
+      <li><a href="#arc"><span class="n">04</span> ARC begrenzen</a></li>
+      <li><a href="#docker"><span class="n">05</span> Docker</a></li>
+      <li><a href="#kernel"><span class="n">06</span> Kernel &amp; Limits</a></li>
+      <li><a href="#firewall"><span class="n">07</span> Firewall</a></li>
+      <li><a href="#agent"><span class="n">08</span> Agent-Vorbereitung</a></li>
+      <li><a href="#abnahme"><span class="n">09</span> Abnahme</a></li>
+      <li><a href="#danach"><span class="n">10</span> Was ich brauche</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <!-- 00 -->
+    <section id="warum">
+      <h2>Warum ZFS und nicht XFS</h2>
+      <p>Im Plan standen beide Wege gleichberechtigt. Wenn du den Host ohnehin frisch aufsetzt, fällt die Entscheidung eindeutig auf ZFS — und der Grund sind nicht die Quotas, die können beide, sondern die Snapshots.</p>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Aufgabe</th><th>XFS mit prjquota</th><th>ZFS</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Harte Speichergrenze pro Server</td>
+              <td>Project-ID verwalten, in DB mitführen</td>
+              <td><code>zfs set quota=10G …</code>, sofort wirksam</td>
+            </tr>
+            <tr>
+              <td>Belegten Platz auslesen</td>
+              <td><code>xfs_quota</code>-Report parsen</td>
+              <td><code>zfs list</code>, exakt und ohne Verzeichnis-Scan</td>
+            </tr>
+            <tr>
+              <td>Backup erstellen</td>
+              <td><code>tar</code> über die ganze Welt, Minuten mit Schreibsperre</td>
+              <td>Snapshot, ~1 Sekunde, danach läuft der Server weiter</td>
+            </tr>
+            <tr>
+              <td>Backup zurückspielen</td>
+              <td>Verzeichnis leeren, entpacken, Minuten</td>
+              <td><code>zfs rollback</code>, Sekunden</td>
+            </tr>
+            <tr>
+              <td>Platzbedarf für 20 Backups</td>
+              <td>20 × volle Weltgröße</td>
+              <td>nur die Deltas</td>
+            </tr>
+            <tr>
+              <td>Kompression</td>
+              <td>keine</td>
+              <td>lz4, Weltdaten schrumpfen typisch auf ein Drittel</td>
+            </tr>
+            <tr>
+              <td>RAM-Kosten</td>
+              <td><span class="chip ok">keine</span></td>
+              <td><span class="chip warn">ARC-Cache, muss gedeckelt werden</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Der einzige echte Nachteil ist der ARC-Cache, der sich sonst nimmt, was er kriegt — und RAM ist bei uns die knappe Ressource, weil jede JVM ihren Heap tatsächlich belegt. Deshalb bekommt ARC in Schritt 4 eine harte Obergrenze und wird in <code>node.reservedMemoryMb</code> eingerechnet. Damit ist der Nachteil verwaltet, die Vorteile bleiben.</p>
+      <div class="callout stop">
+        <strong>Snapshots im selben Pool sind kein Backup gegen Plattenausfall.</strong>
+        <span>Sie schützen gegen das, was tatsächlich täglich passiert: Griefing, ein kaputtes Plugin, ein versehentliches <code>/kill @a</code>. Stirbt die Platte, sind Pool und Snapshots gleichzeitig weg. Für Katastrophenschutz braucht es ein nächtliches <code>zfs send</code> auf eine zweite Platte oder ein anderes Gerät — deshalb steht unten eine zweite Platte auf der Hardware-Liste.</span>
+      </div>
+    </section>
+
+    <!-- 01 -->
+    <section id="hardware">
+      <div class="step-head"><span class="sn">01</span><h2>Hardware</h2></div>
+      <p>RAM ist die bindende Grenze, nicht CPU. Ein Minecraft-Server ist die meiste Zeit fast untätig, belegt seinen Heap aber dauerhaft. Rechne so:</p>
+      <pre><code>Für Server nutzbar = Gesamt-RAM − OS &amp; Dienste − ZFS-ARC
+
+<span class="c"># ARC: ca. 12 % des RAM, mindestens 2 GB, höchstens 16 GB</span>
+<span class="c"># OS &amp; Dienste: Linux + Postgres + Redis + App + Agent</span></code></pre>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Gesamt-RAM</th><th>OS &amp; Dienste</th><th>ZFS-ARC</th><th>Für Server</th><th>Server à 4 GB</th></tr></thead>
+          <tbody>
+            <tr><td class="num">32 GB</td><td class="num">4 GB</td><td class="num">4 GB</td><td class="num">24 GB</td><td class="num">6</td></tr>
+            <tr style="background: var(--accent-soft);"><td class="num"><strong>48 GB</strong></td><td class="num">6 GB</td><td class="num">6 GB</td><td class="num">36 GB</td><td class="num"><strong>9</strong></td></tr>
+            <tr><td class="num">64 GB</td><td class="num">5 GB</td><td class="num">8 GB</td><td class="num">51 GB</td><td class="num">12</td></tr>
+            <tr><td class="num">128 GB</td><td class="num">6 GB</td><td class="num">14 GB</td><td class="num">108 GB</td><td class="num">27</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Deine Konfiguration</h3>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Komponente</th><th>Vorhanden</th><th>Verwendung</th></tr></thead>
+          <tbody>
+            <tr><td>CPU</td><td>Intel i5-12500</td><td>6 Kerne / 12 Threads, hoher Takt — für Minecraft genau richtig, weil die Tick-Schleife single-threaded ist. Node-Wert: 12 Threads bei Überbuchung 1,5.</td></tr>
+            <tr><td>RAM</td><td>48 GB</td><td>12 GB reserviert (6 GB ARC, 2 GB OS, 4 GB Dienste), 36 GB für Server. Das ist die bindende Grenze: <strong>9 Server à 4 GB</strong>.</td></tr>
+            <tr><td>SSD 1</td><td>256 GB</td><td>Komplett System: Ubuntu, <code>/var/lib/docker</code>, Logs. Kein Partitionieren für ZFS nötig.</td></tr>
+            <tr><td>SSD 2</td><td>1 TB</td><td>Vollständig der ZFS-Pool <code>tank</code>. Nach 20 % Reserve bleiben rund 760 GB für Welten und Snapshots — Platz ist hier nicht der Engpass.</td></tr>
+            <tr><td>Backup-Ziel</td><td>NAS DXP4800</td><td>Es gibt keine dritte Platte, also gehen die nächtlichen <code>zfs send</code>-Ströme als Dateien auf die NAS. Siehe Schritt 3.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Zwei getrennte SSDs sind hier ein Vorteil: Du musst nichts partitionieren. Die 256er wird komplett zum System, die 1 TB komplett zum Pool.</p>
+
+      <div class="callout">
+        <strong>Warum das System nicht auch auf ZFS liegt.</strong>
+        <span>Docker legt Images und Container-Schichten in <code>/var/lib/docker</code> ab. Der overlay2-Treiber auf ext4 ist der am besten getestete Pfad überhaupt; ZFS-on-root bringt zusätzlich Boot-Environment- und Bootloader-Fragen mit, die dir hier nichts einbringen. System einfach halten, ZFS genau dort einsetzen, wo es zählt: bei den Weltdaten.</span>
+      </div>
+
+      <div class="callout risk">
+        <strong>Beide SSDs bilden keine Redundanz.</strong>
+        <span>Sie haben getrennte Aufgaben, nicht dieselben Daten. Stirbt die 1-TB-SSD, sind alle Welten weg — Snapshots inklusive, denn die liegen im selben Pool. Der Schutz dagegen ist ausschließlich der nächtliche Strom auf die NAS. Richte ihn ein, bevor der erste fremde Nutzer einen Server bekommt, nicht danach.</span>
+      </div>
+    </section>
+
+    <!-- 02 -->
+    <section id="os">
+      <div class="step-head"><span class="sn">02</span><h2>Betriebssystem</h2></div>
+      <p><strong>Ubuntu Server 24.04 LTS.</strong> Ubuntu liefert ZFS als offiziell unterstütztes Paket mit, das erspart dir das DKMS-Gebastel, das man unter Debian betreibt. 24.04 ist bis 2029 versorgt und der ZFS-Stack darauf ist lange durchgeschüttelt. Ein neueres LTS geht auch, prüfe dann aber vor der Installation, ob <code>zfsutils-linux</code> für den mitgelieferten Kernel verfügbar ist — an dieser Kombination hängt alles Weitere.</p>
+      <p>Bei der Installation: minimale Serverinstallation, kein Desktop, SSH-Server aktivieren, deinen öffentlichen Schlüssel hinterlegen. Die zweite Platte und den freien Bereich der NVMe <em>nicht</em> partitionieren oder formatieren lassen — die übernimmt ZFS in Schritt 3.</p>
+      <pre><code>sudo apt update &amp;&amp; sudo apt full-upgrade -y
+sudo apt install -y zfsutils-linux curl ca-certificates gnupg htop
+
+<span class="c"># Prüfen, dass ZFS geladen ist</span>
+zfs version
+
+<span class="c"># cgroup v2 ist Voraussetzung für saubere Speicher-/CPU-Limits</span>
+stat -fc %T /sys/fs/cgroup     <span class="c"># muss "cgroup2fs" ausgeben</span></code></pre>
+    </section>
+
+    <!-- 03 -->
+    <section id="pool">
+      <div class="step-head"><span class="sn">03</span><h2>ZFS-Pool anlegen</h2></div>
+      <div class="callout risk">
+        <strong>Immer <code>/dev/disk/by-id/</code> verwenden, nie <code>/dev/nvme0n1</code>.</strong>
+        <span>Kernel-Gerätenamen können sich zwischen Neustarts ändern, sobald eine Platte dazukommt. Ein Pool, der auf <code>/dev/sdb</code> zeigt, findet nach dem Einbau der Backup-Platte womöglich das falsche Gerät. Die IDs sind stabil.</span>
+      </div>
+      <pre><code><span class="c"># Verfügbare Geräte und ihre stabilen IDs ansehen</span>
+ls -l /dev/disk/by-id/
+lsblk
+
+<span class="c"># Die komplette 1-TB-SSD wird der Pool — ohne Partitionsnummer am Ende,</span>
+<span class="c"># ZFS legt sein Label selbst an. Vorher sicherstellen, dass es wirklich</span>
+<span class="c"># die 1-TB-Platte ist und nicht die 256er mit dem System darauf.</span>
+sudo zpool create -o ashift=12 \
+  -O compression=lz4 \
+  -O atime=off \
+  -O xattr=sa \
+  -O acltype=posixacl \
+  -O canmount=off \
+  -m none \
+  tank /dev/disk/by-id/DEINE-1TB-SSD-ID</code></pre>
+      <div class="callout risk">
+        <strong>Die Geräte-ID zweimal lesen.</strong>
+        <span><code>zpool create</code> fragt nicht nach und überschreibt, was da ist. Auf der 256er liegt zu diesem Zeitpunkt dein frisch installiertes Ubuntu. <code>lsblk</code> zeigt die Größen — nimm die Zeile mit rund 931 G, nicht die mit 238 G.</span>
+      </div>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Option</th><th>Wofür</th></tr></thead>
+          <tbody>
+            <tr><td><code>ashift=12</code></td><td>4-KB-Sektoren. Falsch gesetzt kostet es dauerhaft Leistung und ist nachträglich nicht änderbar.</td></tr>
+            <tr><td><code>compression=lz4</code></td><td>Weltdaten schrumpfen typisch auf ein Drittel. Die CPU-Kosten sind vernachlässigbar, der gesparte I/O macht es netto schneller.</td></tr>
+            <tr><td><code>atime=off</code></td><td>Ohne das schreibt der Host bei <em>jedem</em> Lesezugriff einen Zeitstempel zurück. Bei Minecraft sind das sehr viele überflüssige Schreibvorgänge.</td></tr>
+            <tr><td><code>xattr=sa</code></td><td>Erweiterte Attribute inline statt in Extra-Objekten — spürbar weniger I/O.</td></tr>
+            <tr><td><code>-m none</code>, <code>canmount=off</code></td><td>Der Pool selbst wird nirgends eingehängt, nur seine Datasets. Hält <code>/</code> sauber.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>Datasets</h3>
+      <pre><code>sudo zfs create -o mountpoint=/srv/mc      tank/mc
+sudo zfs create -o mountpoint=/srv/backups tank/backups
+
+<span class="c"># So wird der Agent später pro Server ein Dataset anlegen:</span>
+<span class="c">#   zfs create -o quota=10G tank/mc/srv-abc123</span>
+<span class="c">#   chown 1000:1000 /srv/mc/srv-abc123</span>
+<span class="c"># Es mountet automatisch unter /srv/mc/srv-abc123 und wird dorthin gebind-mountet.</span></code></pre>
+      <p>Die <code>1000:1000</code> sind kein Zufall: das <code>itzg/minecraft-server</code>-Image läuft als UID 1000. Gehört das Verzeichnis root, startet der Server nicht.</p>
+      <h3>Backup-Ziel: die NAS</h3>
+      <p>Eine dritte Platte gibt es nicht, also geht der Katastrophen-Backup auf die DXP4800. <code>zfs send</code> erzeugt einen Datenstrom, den man einfach als Datei ablegen kann — die NAS muss dafür kein ZFS können.</p>
+      <pre><code><span class="c"># NAS dauerhaft einhängen (Zugangsdaten in eine 0600-Datei, nicht in fstab)</span>
+sudo mkdir -p /mnt/nas
+sudo apt install -y cifs-utils
+<span class="c"># /etc/fstab:</span>
+<span class="c">#   //DXP4800/Backups /mnt/nas cifs credentials=/etc/nas.cred,uid=0,gid=0,_netdev 0 0</span>
+
+<span class="c"># Vollsicherung eines Servers als Datei</span>
+zfs send tank/mc/srv-abc123@2026-08-14 | zstd > /mnt/nas/srv-abc123-2026-08-14.zfs.zst
+
+<span class="c"># Später inkrementell — überträgt nur die Differenz zum Vortag</span>
+zfs send -i @2026-08-13 tank/mc/srv-abc123@2026-08-14 | zstd > /mnt/nas/…
+
+<span class="c"># Zurückholen</span>
+zstd -d < /mnt/nas/srv-abc123-2026-08-14.zfs.zst | zfs recv tank/mc/srv-abc123</code></pre>
+      <div class="callout">
+        <strong>Snapshots und NAS-Ströme sind zwei verschiedene Dinge.</strong>
+        <span>Die Snapshots im Pool bedienen den Backup-Knopf im Panel: schnell, häufig, für Griefing und kaputte Plugins. Die Ströme auf der NAS sind der Schutz gegen den Ausfall der SSD und laufen nächtlich als Cron. Nur Letztere überleben, wenn die Platte stirbt.</span>
+      </div>
+    </section>
+
+    <!-- 04 -->
+    <section id="arc">
+      <div class="step-head"><span class="sn">04</span><h2>ARC begrenzen</h2></div>
+      <p>Der wichtigste Schritt des ganzen Runbooks. Ohne Deckel wächst der ZFS-Cache, bis der Kernel Druck meldet — und dieser Druck trifft dann JVMs, die ihren Speicher nicht hergeben können. Das Ergebnis sind OOM-Kills mitten im Spielbetrieb.</p>
+      <pre><code><span class="c"># 48 GB RAM → 6 GB ARC (6 * 1024^3 = 6442450944)</span>
+echo "options zfs zfs_arc_max=6442450944" | sudo tee /etc/modprobe.d/zfs.conf
+sudo update-initramfs -u
+
+<span class="c"># Sofort wirksam ohne Neustart:</span>
+echo 6442450944 | sudo tee /sys/module/zfs/parameters/zfs_arc_max
+
+<span class="c"># Kontrolle</span>
+grep -E '^(c_max|size)' /proc/spl/kstat/zfs/arcstats</code></pre>
+      <div class="callout">
+        <strong>Diese Zahl gehört ins Datenmodell.</strong>
+        <span>ARC plus OS plus Postgres/Redis/App/Agent wandern als <code>node.reservedMemoryMb</code> in die <code>Node</code>-Zeile. Die Kapazitätsprüfung beim Anlegen eines Servers zieht sie ab, damit sich das Panel nie mehr RAM verspricht, als tatsächlich da ist.</span>
+      </div>
+    </section>
+
+    <!-- 05 -->
+    <section id="docker">
+      <div class="step-head"><span class="sn">05</span><h2>Docker</h2></div>
+      <p>Aus dem offiziellen Repo, nicht aus <code>apt install docker.io</code> — das Distributionspaket hinkt regelmäßig mehrere Versionen hinterher.</p>
+      <pre><code>curl -fsSL https://get.docker.com | sudo sh
+
+<span class="c"># Log-Rotation global, sonst füllt ein gesprächiges Plugin die Systemplatte</span>
+sudo tee /etc/docker/daemon.json &gt; /dev/null &lt;&lt;'EOF'
+{
+  "log-driver": "json-file",
+  "log-opts": { "max-size": "20m", "max-file": "3" },
+  "live-restore": true,
+  "default-ulimits": { "nofile": { "Name": "nofile", "Soft": 65536, "Hard": 65536 } }
+}
+EOF
+
+sudo systemctl restart docker
+docker info | grep -E 'Storage Driver|Cgroup Version'
+<span class="c"># erwartet: overlay2 und cgroup v2</span>
+
+<span class="c"># Internes Netz für die Minecraft-Container</span>
+sudo docker network create mc-net</code></pre>
+      <p><code>live-restore</code> lohnt sich hier besonders: damit überleben laufende Container einen Neustart des Docker-Daemons. Ein Daemon-Update wirft dann nicht alle Spieler gleichzeitig raus.</p>
+    </section>
+
+    <!-- 06 -->
+    <section id="kernel">
+      <div class="step-head"><span class="sn">06</span><h2>Kernel-Parameter und Limits</h2></div>
+      <pre><code>sudo tee /etc/sysctl.d/99-mc.conf &gt; /dev/null &lt;&lt;'EOF'
+<span class="c"># JVMs dürfen niemals swappen — lieber sauber sterben als das System lahmlegen</span>
+vm.swappiness = 1
+
+<span class="c"># Die JVM legt sehr viele Speicher-Mappings an</span>
+vm.max_map_count = 262144
+
+<span class="c"># Viele gleichzeitige Verbindungen über den Router</span>
+net.core.somaxconn = 1024
+net.ipv4.tcp_max_syn_backlog = 2048
+
+fs.file-max = 1000000
+fs.inotify.max_user_watches = 524288
+EOF
+
+sudo sysctl --system</code></pre>
+      <p>Swap komplett abzuschalten ist reizvoll, aber riskant: ohne jeden Puffer trifft der OOM-Killer im Zweifel Postgres statt einen Spielserver. Besser ist ein kleiner Swap (8 GB) zusammen mit <code>swappiness=1</code> — dann wird er praktisch nie benutzt, fängt aber Spitzen ab.</p>
+      <p>Zeit synchron halten (<code>systemd-timesyncd</code> ist bei Ubuntu aktiv, kurz mit <code>timedatectl</code> prüfen). Schiefe Uhren äußern sich später als unerklärliche TLS-Fehler und unlesbare Logs.</p>
+    </section>
+
+    <!-- 07 -->
+    <section id="firewall">
+      <div class="step-head"><span class="sn">07</span><h2>Firewall und SSH</h2></div>
+      <pre><code>sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow 22/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw allow 25565/tcp
+sudo ufw enable</code></pre>
+      <div class="callout risk">
+        <strong>Docker umgeht ufw.</strong>
+        <span>Veröffentlicht ein Container einen Port, schreibt Docker eigene iptables-Regeln, die an ufw vorbeigehen — der Port ist dann offen, obwohl ufw ihn verbietet. Unser Aufbau umgeht das Problem, weil außer mc-router kein Container Ports veröffentlicht. Halte das durch: <em>keine</em> <code>ports:</code>-Einträge bei Minecraft-Containern, bei Postgres, bei Redis, beim Agent. Kontrolliere es nach jedem Compose-Umbau mit <code>docker ps --format '{{.Names}} {{.Ports}}'</code>.</span>
+      </div>
+      <h3>Weiterleitung im Heimrouter</h3>
+      <p>Die Firewall auf dem Host ist die eine Hälfte, der Router davor die andere. Genau drei Ports gehören aus dem Internet auf den Host — mehr nicht.</p>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Port</th><th>Protokoll</th><th>Wofür</th><th>Pflicht</th></tr></thead>
+          <tbody>
+            <tr><td class="num">25565</td><td>TCP</td><td>Minecraft, sämtliche Server über mc-router</td><td><span class="chip ok">ja</span></td></tr>
+            <tr><td class="num">443</td><td>TCP</td><td>Panel unter <code>panel.neuhauser.app</code></td><td><span class="chip ok">ja</span></td></tr>
+            <tr><td class="num">80</td><td>TCP</td><td>Weiterleitung auf HTTPS und ACME-Prüfung</td><td><span class="chip warn">empfohlen</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout stop">
+        <strong>Niemals weiterleiten: 22, 5432, 6379, 8787, 8080, 25575.</strong>
+        <span>Diese Dienste sind bewusst an <code>127.0.0.1</code> gebunden. Besonders <code>8787</code>: Der Agent hält den Docker-Socket, eine offene Weiterleitung dorthin gäbe jedem im Internet Root auf dem Host. Kontrolle mit <code>docker ps --format '{{.Names}} {{.Ports}}'</code> — außer bei mc-router darf dort nirgends <code>0.0.0.0</code> stehen.</span>
+      </div>
+
+      <p>Port 80 ist nicht zwingend: Caddy holt das Zertifikat notfalls allein über 443 (TLS-ALPN-01). Ohne 80 landen aber alle, die <code>http://</code> eintippen, im Leeren statt auf HTTPS.</p>
+
+      <h3>Drei Voraussetzungen davor</h3>
+      <ul class="list">
+        <li><strong>Feste interne Adresse</strong> für den Host, per DHCP-Reservierung. Sonst zeigt die Weiterleitung nach dem nächsten Neustart auf ein anderes Gerät im Netz.</li>
+        <li><strong>DynDNS</strong>, falls die öffentliche IP wechselt — bei Privatanschlüssen die Regel. Router können das meist nur für einen einzelnen Hostnamen; für <code>*.mc.neuhauser.app</code> braucht es in der Regel einen Updater auf dem Host, der die API des DNS-Anbieters bedient.</li>
+        <li><strong>Eine echte öffentliche IPv4.</strong> Bei DS-Lite (verbreitet bei Kabelanschlüssen) teilen sich viele Kunden eine Adresse, und Portweiterleitung funktioniert für IPv4 gar nicht. Erkennbar an einer WAN-Adresse aus <code>100.64.0.0/10</code> oder daran, dass im Router überhaupt keine IPv4 auftaucht. Dann bleiben IPv6-only mit AAAA-Records oder ein Tunnel über einen kleinen VPS.</li>
+      </ul>
+
+      <h3>SSH und Grundhärtung</h3>
+      <pre><code><span class="c"># SSH: nur Schlüssel, kein Root-Login mit Passwort</span>
+sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+sudo sed -i 's/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+sudo systemctl restart ssh
+
+sudo apt install -y fail2ban unattended-upgrades</code></pre>
+      <p>Bei den automatischen Updates nur Sicherheitsaktualisierungen zulassen und Kernel-Upgrades im Blick behalten: Ein neuer Kernel ohne passendes ZFS-Modul bedeutet, dass der Pool nach dem Neustart nicht da ist. Deshalb nach jedem Kernel-Update ein kontrollierter Reboot mit anschließendem <code>zpool status</code>, nicht blind automatisch neu starten lassen.</p>
+    </section>
+
+    <!-- 08 -->
+    <section id="agent">
+      <div class="step-head"><span class="sn">08</span><h2>Vorbereitung für den Agent</h2></div>
+      <p>Hier eine Präzisierung gegenüber dem Bauplan, die sich aus der ZFS-Entscheidung ergibt: <strong>der Agent läuft nicht als Container, sondern als systemd-Dienst direkt auf dem Host.</strong></p>
+      <p>Der Grund ist praktisch. Der Agent muss <code>zfs create</code>, <code>zfs set quota</code>, <code>zfs snapshot</code> und <code>zfs rollback</code> ausführen. Aus einem Container heraus ginge das nur mit <code>--privileged</code> und durchgereichtem <code>/dev/zfs</code> — also mit deutlich mehr Rechten als jetzt. Und ein Sicherheitsverlust ist es nicht: Wer den Docker-Socket hat, ist auf dem Host ohnehin root-gleichwertig. Der Agent auf dem Host macht diese Tatsache nur sichtbar, statt sie hinter einer Container-Grenze zu verstecken, die keine ist.</p>
+      <p>Nebenbei wird dadurch einiges einfacher: Dateimanager-Zugriffe gehen direkt aufs Dateisystem statt durch einen Mount, und Log-Streams brauchen keinen zusätzlichen Hop.</p>
+      <pre><code><span class="c"># Dienstkonto (in der Docker-Gruppe, aber ohne Login-Shell)</span>
+sudo useradd --system --home /opt/mc-agent --shell /usr/sbin/nologin mcagent
+sudo usermod -aG docker mcagent
+sudo mkdir -p /opt/mc-agent /etc/mc-agent
+sudo chown mcagent:mcagent /opt/mc-agent
+
+<span class="c"># ZFS-Rechte gezielt delegieren statt pauschal sudo zu geben</span>
+sudo zfs allow -u mcagent create,destroy,mount,quota,snapshot,rollback,hold tank/mc
+sudo zfs allow -u mcagent create,destroy,mount,snapshot,receive tank/backups
+
+<span class="c"># Der Agent hört nur lokal — nie auf 0.0.0.0</span>
+<span class="c">#   MC_AGENT_BIND=127.0.0.1:8787</span>
+<span class="c">#   MC_AGENT_TOKEN=<zufällig, 48 Zeichen>  → gehört in node.agentToken</span>
+sudo touch /etc/mc-agent/env
+sudo chmod 600 /etc/mc-agent/env</code></pre>
+      <div class="callout">
+        <strong><code>zfs allow</code> statt sudo.</strong>
+        <span>Die Delegation gibt dem Dienstkonto genau die Operationen, und nur unterhalb von <code>tank/mc</code> und <code>tank/backups</code>. Ein Fehler im Agent kann damit nicht den Systempool anfassen. Für <code>mount</code> braucht ZFS unter Linux je nach Version zusätzlich <code>CAP_SYS_ADMIN</code> — falls das Anlegen scheitert, in der systemd-Unit <code>AmbientCapabilities=CAP_SYS_ADMIN</code> ergänzen, bevor du zu pauschalem sudo greifst.</span>
+      </div>
+      <p>Damit die App im Container den Agent auf dem Host erreicht, hängt sie an <code>extra_hosts: ["host.docker.internal:host-gateway"]</code> und spricht <code>http://host.docker.internal:8787</code> an. Der Port bleibt an <code>127.0.0.1</code> gebunden und ist von außen nicht sichtbar.</p>
+    </section>
+
+    <!-- 09 -->
+    <section id="abnahme">
+      <div class="step-head"><span class="sn">09</span><h2>Abnahme</h2></div>
+      <p>Vor dem ersten Commit einmal komplett durchgehen. Jede Zeile muss stimmen, sonst holt dich der Punkt später mitten in P3 ein.</p>
+      <div class="check">
+        <div class="check-row"><div class="cmd">zpool status</div><div class="exp">Pool <code>tank</code> ist ONLINE, keine Fehler</div></div>
+        <div class="check-row"><div class="cmd">zfs list</div><div class="exp"><code>tank/mc</code> auf <code>/srv/mc</code>, <code>tank/backups</code> auf <code>/srv/backups</code></div></div>
+        <div class="check-row"><div class="cmd">zfs get compression,atime tank/mc</div><div class="exp"><code>lz4</code> und <code>off</code></div></div>
+        <div class="check-row"><div class="cmd">cat /sys/module/zfs/parameters/zfs_arc_max</div><div class="exp">Der gesetzte Deckel, nicht 0</div></div>
+        <div class="check-row"><div class="cmd">stat -fc %T /sys/fs/cgroup</div><div class="exp"><code>cgroup2fs</code></div></div>
+        <div class="check-row"><div class="cmd">docker info | grep Storage</div><div class="exp"><code>overlay2</code></div></div>
+        <div class="check-row"><div class="cmd">docker network ls | grep mc-net</div><div class="exp">Netz existiert</div></div>
+        <div class="check-row"><div class="cmd">sysctl vm.swappiness vm.max_map_count</div><div class="exp"><code>1</code> und <code>262144</code></div></div>
+        <div class="check-row"><div class="cmd">sudo ufw status</div><div class="exp">Nur 22, 80, 443, 25565 offen</div></div>
+        <div class="check-row"><div class="cmd">sudo -u mcagent zfs create -o quota=1G tank/mc/probe</div><div class="exp">Läuft ohne sudo-Fehler durch — der entscheidende Test für Schritt 8</div></div>
+      </div>
+      <h3>Praxistest: ein Server von Hand</h3>
+      <p>Bevor eine Zeile Anwendungscode entsteht, einmal beweisen, dass die Kette trägt.</p>
+      <pre><code>sudo chown 1000:1000 /srv/mc/probe
+
+docker run -d --name mc-probe \
+  --network mc-net \
+  -v /srv/mc/probe:/data \
+  --memory 2g --memory-swap 2g --cpus 2 --pids-limit 512 \
+  --security-opt no-new-privileges:true \
+  --stop-timeout 120 \
+  -e EULA=TRUE -e TYPE=PAPER -e VERSION=1.21.8 \
+  -e MAX_MEMORY=1536M \
+  itzg/minecraft-server:java21
+
+docker logs -f mc-probe    <span class="c"># auf: Done (…s)! For help, type "help"</span>
+zfs list tank/mc/probe     <span class="c"># zeigt gewachsenen Platz und die 1G-Quota</span></code></pre>
+      <p>Beachte das Verhältnis: 2 GB Container-Limit, aber nur 1536 MB Heap. Genau die Lücke verhindert später die OOM-Kills. Danach aufräumen:</p>
+      <pre><code>docker rm -f mc-probe
+sudo zfs destroy tank/mc/probe</code></pre>
+    </section>
+
+    <!-- 10 -->
+    <section id="danach">
+      <div class="step-head"><span class="sn">10</span><h2>Was ich danach von dir brauche</h2></div>
+      <p>Hardware und Domain stehen inzwischen fest, die Werte sind oben und im Repo eingetragen. Offen ist nur noch das DNS und der Mailversand.</p>
+
+      <h3>DNS für neuhauser.app</h3>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Eintrag</th><th>Typ</th><th>Ziel</th><th>Wofür</th></tr></thead>
+          <tbody>
+            <tr><td><code>panel.neuhauser.app</code></td><td>A</td><td>öffentliche IP</td><td>Das Web-Panel, TLS über Caddy</td></tr>
+            <tr><td><code>*.mc.neuhauser.app</code></td><td>A</td><td>öffentliche IP</td><td>Alle Minecraft-Server. <code>creeper.mc.neuhauser.app</code> landet über mc-router im richtigen Container.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout risk">
+        <strong><code>.app</code> erzwingt HTTPS.</strong>
+        <span>Die Domain steht auf der HSTS-Preload-Liste, die in jedem Browser fest eingebaut ist. Über <code>http://</code> ist das Panel damit grundsätzlich nicht erreichbar — auch nicht testweise, auch nicht mit Zertifikatswarnung. Caddy holt die Zertifikate automatisch, also ist das kein Aufwand, aber es heißt: bevor DNS und Caddy stehen, kannst du das Panel unter dieser Domain gar nicht aufrufen. Lokal entwickelst du weiter über <code>localhost</code>, das ist von HSTS ausgenommen.</span>
+      </div>
+
+      <p>Für Minecraft selbst spielt HSTS keine Rolle — das ist kein HTTP. Der Wildcard-Eintrag genügt, ein SRV-Record ist nicht nötig, solange die Server auf dem Standardport 25565 laufen.</p>
+
+      <h3>Bleibt offen</h3>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Angabe</th><th>Fällig</th><th>Wofür</th></tr></thead>
+          <tbody>
+            <tr><td>Mailversand für die Verifikation</td><td>vor dem ersten fremden Nutzer</td><td>Resend oder Postmark. Für die Entwicklung steht der Bestätigungslink im Terminal, der Flow ist damit vollständig testbar.</td></tr>
+            <tr><td>NAS-Zugang für die Backup-Ströme</td><td>vor P7</td><td>Freigabename und ein Konto mit Schreibrecht, siehe Schritt 3.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <div class="endnote">Runbook · Host-Vorbereitung · Ubuntu 24.04 LTS + ZFS + Docker · 14.08.2026</div>
+
+</div>

@@ -1,0 +1,73 @@
+# Nur die Infrastruktur für die lokale Entwicklung.
+# App und Agent laufen dabei direkt auf dem Entwicklungsrechner (pnpm dev),
+# nicht als Container — das produktive Compose-Setup kommt in P2/P3 dazu.
+#
+# Die Daten liegen bewusst in benannten Docker-Volumes und NICHT als
+# Bind-Mount im Projektverzeichnis: das liegt auf einer SMB-Freigabe, und
+# Postgres braucht POSIX-Dateisperren und verlässliches fsync. Auf SMB
+# zerlegt es sonst seinen eigenen Systemkatalog
+# ("cache lookup failed for index").
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mcsaas
+      POSTGRES_PASSWORD: dev_only_not_secret
+      POSTGRES_DB: mcsaas
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mcsaas -d mcsaas"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Der einzige Port, den Spieler jemals sehen. Der Router liest den
+  # Hostnamen aus dem Minecraft-Handshake und leitet an den passenden
+  # Container weiter — deshalb veröffentlicht kein Server-Container Ports.
+  mc-router:
+    image: itzg/mc-router:latest
+    restart: unless-stopped
+    command:
+      - -port
+      - "25565"
+      - -api-binding
+      - "0.0.0.0:8080"
+      # Vorgabe wäre 1 Verbindung pro Sekunde. Das trifft schon eine
+      # Handvoll Spieler, die nach einem Neustart gleichzeitig zurückkommen.
+      - -connection-rate-limit
+      - "20"
+    ports:
+      - "25565:25565"
+      # Die Routen-API bleibt lokal; sie darf Server umleiten.
+      - "127.0.0.1:8080:8080"
+    networks:
+      - mc-net
+
+volumes:
+  postgres-data:
+  redis-data:
+
+# Von außen angelegt (`docker network create mc-net`) bzw. vom Agent, damit
+# Router und Server-Container dasselbe Netz teilen.
+networks:
+  mc-net:
+    name: mc-net
+    external: true

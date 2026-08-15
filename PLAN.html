@@ -1,0 +1,959 @@
+<title>Minecraft-Hosting Bauplan</title>
+<style>
+  :root {
+    --ground: #F3F6F4;
+    --surface: #FFFFFF;
+    --surface-2: #E7ECE8;
+    --ink: #131B17;
+    --ink-2: #44514A;
+    --ink-3: #76847B;
+    --rule: #D2DAD4;
+    --rule-2: #BCC7C0;
+    --accent: #2C6B4C;
+    --accent-soft: #E1EDE6;
+    --warn: #8E640F;
+    --warn-soft: #F4EAD5;
+    --crit: #93402F;
+    --crit-soft: #F5E2DD;
+    --shadow: 0 1px 2px rgba(19,27,23,.05), 0 8px 24px -18px rgba(19,27,23,.35);
+
+    --f-display: "Iowan Old Style", Charter, "Palatino Linotype", Palatino, Georgia, ui-serif, serif;
+    --f-body: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --f-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0F1412;
+      --surface: #161D19;
+      --surface-2: #1E2722;
+      --ink: #DDE5DF;
+      --ink-2: #99A79F;
+      --ink-3: #72817A;
+      --rule: #28322C;
+      --rule-2: #37443C;
+      --accent: #64B085;
+      --accent-soft: #19291F;
+      --warn: #D0A054;
+      --warn-soft: #2B2416;
+      --crit: #D08069;
+      --crit-soft: #2C1C17;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -18px rgba(0,0,0,.8);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0F1412;
+    --surface: #161D19;
+    --surface-2: #1E2722;
+    --ink: #DDE5DF;
+    --ink-2: #99A79F;
+    --ink-3: #72817A;
+    --rule: #28322C;
+    --rule-2: #37443C;
+    --accent: #64B085;
+    --accent-soft: #19291F;
+    --warn: #D0A054;
+    --warn-soft: #2B2416;
+    --crit: #D08069;
+    --crit-soft: #2C1C17;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -18px rgba(0,0,0,.8);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+    padding: 0 0 8rem;
+  }
+
+  .wrap {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+  }
+  @media (min-width: 1080px) {
+    .wrap {
+      grid-template-columns: 190px minmax(0, 1fr);
+      gap: 4rem;
+      padding: 0 2.5rem;
+    }
+  }
+
+  /* ---------- masthead ---------- */
+  .masthead {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--rule);
+    padding: 4.5rem 0 2.25rem;
+    margin-bottom: 3rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: .7rem;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  h1 {
+    font-family: var(--f-display);
+    font-size: clamp(2.4rem, 6vw, 3.6rem);
+    line-height: 1.06;
+    letter-spacing: -.02em;
+    font-weight: 600;
+    text-wrap: balance;
+    margin: 0;
+  }
+  .standfirst {
+    font-size: 1.075rem;
+    color: var(--ink-2);
+    max-width: 62ch;
+    margin: 0;
+  }
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem 1.5rem;
+    font-family: var(--f-mono);
+    font-size: .72rem;
+    color: var(--ink-3);
+    letter-spacing: .04em;
+    padding-top: .5rem;
+  }
+  .meta-row b { color: var(--ink-2); font-weight: 500; }
+
+  /* ---------- rail ---------- */
+  nav.rail { display: none; }
+  @media (min-width: 1080px) {
+    nav.rail {
+      display: block;
+      position: sticky;
+      top: 2rem;
+      align-self: start;
+      max-height: calc(100vh - 4rem);
+      overflow-y: auto;
+      padding-bottom: 2rem;
+    }
+    nav.rail ol {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: .1rem;
+      counter-reset: rail;
+    }
+    nav.rail a {
+      display: flex;
+      gap: .6rem;
+      font-family: var(--f-mono);
+      font-size: .74rem;
+      letter-spacing: .01em;
+      color: var(--ink-3);
+      text-decoration: none;
+      padding: .3rem 0;
+      border-radius: 2px;
+    }
+    nav.rail a:hover { color: var(--accent); }
+    nav.rail a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    nav.rail a .n { color: var(--rule-2); font-variant-numeric: tabular-nums; }
+  }
+
+  main { min-width: 0; display: flex; flex-direction: column; gap: 3.5rem; }
+
+  section { display: flex; flex-direction: column; gap: 1.1rem; scroll-margin-top: 2rem; }
+
+  h2 {
+    font-family: var(--f-display);
+    font-size: 1.65rem;
+    line-height: 1.2;
+    letter-spacing: -.012em;
+    font-weight: 600;
+    margin: 0;
+    padding-bottom: .7rem;
+    border-bottom: 1px solid var(--rule);
+    text-wrap: balance;
+  }
+  h3 {
+    font-family: var(--f-body);
+    font-size: .82rem;
+    font-weight: 650;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    margin: .9rem 0 0;
+  }
+  p { margin: 0; max-width: 68ch; }
+  p + p { margin-top: -.2rem; }
+  a { color: var(--accent); }
+
+  ul.list { margin: 0; padding-left: 1.15rem; display: flex; flex-direction: column; gap: .45rem; max-width: 68ch; }
+  ul.list li::marker { color: var(--rule-2); }
+
+  code {
+    font-family: var(--f-mono);
+    font-size: .855em;
+    background: var(--surface-2);
+    padding: .1em .35em;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+
+  pre {
+    margin: 0;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    padding: 1rem 1.1rem;
+    overflow-x: auto;
+    box-shadow: var(--shadow);
+  }
+  pre code {
+    background: none;
+    padding: 0;
+    font-size: .78rem;
+    line-height: 1.7;
+    color: var(--ink-2);
+    white-space: pre;
+  }
+  pre .k { color: var(--accent); }
+  pre .c { color: var(--ink-3); font-style: italic; }
+
+  .scroller { overflow-x: auto; border: 1px solid var(--rule); border-radius: 5px; background: var(--surface); box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; font-size: .875rem; }
+  th, td { text-align: left; padding: .68rem .9rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  thead th {
+    font-family: var(--f-mono);
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--ink-3);
+    font-weight: 500;
+    background: var(--surface-2);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td code { font-size: .8em; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .chip {
+    display: inline-block;
+    font-family: var(--f-mono);
+    font-size: .66rem;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    padding: .18em .5em;
+    border-radius: 3px;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+  .chip.crit { background: var(--crit-soft); color: var(--crit); }
+  .chip.warn { background: var(--warn-soft); color: var(--warn); }
+  .chip.ok   { background: var(--accent-soft); color: var(--accent); }
+
+  /* ---------- decisions ---------- */
+  .decisions { display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 5px; overflow: hidden; }
+  @media (min-width: 720px) { .decisions { grid-template-columns: 1fr 1fr; } }
+  .dec { background: var(--surface); padding: 1.15rem 1.25rem; display: flex; flex-direction: column; gap: .4rem; }
+  .dec .label { font-family: var(--f-mono); font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+  .dec .val { font-family: var(--f-display); font-size: 1.12rem; line-height: 1.25; color: var(--ink); }
+  .dec .why { font-size: .845rem; color: var(--ink-2); line-height: 1.55; }
+
+  /* ---------- diagram ---------- */
+  figure { margin: 0; display: flex; flex-direction: column; gap: .7rem; }
+  .diagram-frame {
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    background: var(--surface);
+    padding: 1.25rem 1rem;
+    overflow-x: auto;
+    box-shadow: var(--shadow);
+  }
+  .diagram-frame svg { display: block; width: 100%; min-width: 660px; height: auto; }
+  figcaption { font-size: .8rem; color: var(--ink-3); max-width: 66ch; }
+
+  .d-box { fill: var(--surface-2); stroke: var(--rule-2); stroke-width: 1; }
+  .d-box-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1; }
+  .d-group { fill: none; stroke: var(--rule-2); stroke-width: 1; stroke-dasharray: 3 3; }
+  .d-label { fill: var(--ink); font-family: var(--f-body); font-size: 12.5px; font-weight: 550; }
+  .d-sub { fill: var(--ink-3); font-family: var(--f-mono); font-size: 10px; letter-spacing: .04em; }
+  .d-line { stroke: var(--ink-3); stroke-width: 1.25; fill: none; }
+  .d-line-soft { stroke: var(--rule-2); stroke-width: 1.25; fill: none; stroke-dasharray: 4 3; }
+  .d-flowlabel { fill: var(--ink-3); font-family: var(--f-mono); font-size: 9.5px; letter-spacing: .06em; }
+
+  /* ---------- phases ---------- */
+  .phases { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--rule); border-radius: 5px; overflow: hidden; background: var(--surface); box-shadow: var(--shadow); }
+  .phase { display: grid; grid-template-columns: 3.2rem 1fr; gap: 0 1rem; padding: 1rem 1.15rem; border-bottom: 1px solid var(--rule); }
+  .phase:last-child { border-bottom: none; }
+  .phase .pid { font-family: var(--f-mono); font-size: .78rem; font-weight: 600; color: var(--accent); padding-top: .12rem; font-variant-numeric: tabular-nums; }
+  .phase .pbody { display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
+  .phase .ptitle { font-weight: 600; font-size: .97rem; }
+  .phase .pdesc { font-size: .865rem; color: var(--ink-2); line-height: 1.55; }
+  .phase .pout { font-family: var(--f-mono); font-size: .72rem; color: var(--ink-3); letter-spacing: .01em; }
+
+  .callout {
+    border-left: 2px solid var(--accent);
+    background: var(--accent-soft);
+    padding: .9rem 1.1rem;
+    border-radius: 0 4px 4px 0;
+    font-size: .89rem;
+    color: var(--ink-2);
+    max-width: 70ch;
+    display: flex;
+    flex-direction: column;
+    gap: .4rem;
+  }
+  .callout strong { color: var(--ink); font-weight: 620; }
+  .callout.risk { border-left-color: var(--warn); background: var(--warn-soft); }
+
+  .endnote { grid-column: 1 / -1; border-top: 1px solid var(--rule); margin-top: 4rem; padding-top: 1.25rem; font-family: var(--f-mono); font-size: .72rem; color: var(--ink-3); letter-spacing: .03em; }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Architektur &amp; Umsetzungsplan</div>
+    <h1>Minecraft-Hosting Bauplan</h1>
+    <p class="standfirst">Ein selbst gehostetes SaaS auf einem Linux-Host: Nutzer registrieren sich und bekommen einen eigenen Minecraft-Server als Docker-Container. Admins definieren Templates mit RAM-, CPU- und Speichergrenzen. Nutzer starten, stoppen, konfigurieren und bemoden ihren Server über ein Web-Panel.</p>
+    <div class="meta-row">
+      <span><b>Stand</b> 14.08.2026</span>
+      <span><b>Ziel</b> v1 auf einem Host</span>
+      <span><b>Stack</b> Next.js · Prisma · Postgres · Redis · Docker · ZFS</span>
+      <span><b>Begleitend</b> <a href="https://claude.ai/code/artifact/6afcebe3-ad70-4534-baf7-64ee7bd88fc4">Host-Runbook</a></span>
+    </div>
+  </header>
+
+  <nav class="rail" aria-label="Inhalt">
+    <ol>
+      <li><a href="#entscheidungen"><span class="n">01</span> Entscheidungen</a></li>
+      <li><a href="#architektur"><span class="n">02</span> Architektur</a></li>
+      <li><a href="#netzwerk"><span class="n">03</span> Netzwerk</a></li>
+      <li><a href="#container"><span class="n">04</span> Container-Modell</a></li>
+      <li><a href="#speicher"><span class="n">05</span> Speicher &amp; Quotas</a></li>
+      <li><a href="#daten"><span class="n">06</span> Datenmodell</a></li>
+      <li><a href="#lifecycle"><span class="n">07</span> Zustände &amp; Jobs</a></li>
+      <li><a href="#konsole"><span class="n">08</span> Konsole &amp; Dateien</a></li>
+      <li><a href="#backups"><span class="n">09</span> Backups</a></li>
+      <li><a href="#sicherheit"><span class="n">10</span> Sicherheit</a></li>
+      <li><a href="#roadmap"><span class="n">11</span> Roadmap</a></li>
+      <li><a href="#offen"><span class="n">12</span> Offene Punkte</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <!-- 01 -->
+    <section id="entscheidungen">
+      <h2>Die vier Grundsatzentscheidungen</h2>
+      <p>Diese Festlegungen bestimmen alles Weitere. Sie sind bewusst getroffen und sollten nicht mitten in der Umsetzung revidiert werden.</p>
+      <div class="decisions">
+        <div class="dec">
+          <div class="label">Stack</div>
+          <div class="val">Next.js Full-Stack</div>
+          <div class="why">App Router mit Route Handlers, Prisma auf Postgres, ein separater Worker-Prozess für alles Langlaufende. Ein Repo, ein Deployment, kein API-Vertrag zwischen zwei Teams zu pflegen.</div>
+        </div>
+        <div class="dec">
+          <div class="label">Netzwerk</div>
+          <div class="val">Hostname-Routing über mc-router</div>
+          <div class="why">Genau ein offener Port (25565) für alle Server. Spieler verbinden sich zu <code>name.mc.example.com</code>, der Router liest den Hostnamen aus dem Handshake und leitet an den richtigen Container.</div>
+        </div>
+        <div class="dec">
+          <div class="label">Abrechnung</div>
+          <div class="val">Später, Andockpunkte jetzt</div>
+          <div class="why"><code>Plan</code> und <code>Subscription</code> stehen von Anfang an im Schema, Limits werden daraus abgeleitet. Stripe kommt in P8 dazu, ohne Migration am Kernmodell.</div>
+        </div>
+        <div class="dec">
+          <div class="label">Skalierung</div>
+          <div class="val">Ein Host, Multi-Node-fähig</div>
+          <div class="why">Die App spricht nie direkt mit Docker, sondern immer mit einem <em>Node-Agent</em> über HTTP. In v1 läuft der Agent auf demselben Rechner. Ein zweiter Host ist später eine Zeile in der <code>Node</code>-Tabelle.</div>
+        </div>
+      </div>
+      <div class="callout">
+        <strong>Der Agent ist der Dreh- und Angelpunkt.</strong>
+        <span>Er ist gleichzeitig Queue-Worker und Docker-Zugriffsschicht, und er ist der einzige Prozess mit Zugriff auf den Docker-Socket. Das löst drei Probleme auf einmal: Sicherheitsisolation, Multi-Node-Vorbereitung und das Streamen von Logs und Live-Statistiken aus Containern, an die die Next.js-App selbst nicht herankommt.</span>
+      </div>
+    </section>
+
+    <!-- 02 -->
+    <section id="architektur">
+      <h2>Architektur</h2>
+      <p>Zwei getrennte Pfade, die sich nur in den Containern treffen: der <em>Spielerpfad</em> (roher Minecraft-Traffic, muss schnell und dumm sein) und der <em>Steuerpfad</em> (Panel, Datenbank, Jobs).</p>
+
+      <figure>
+        <div class="diagram-frame">
+          <svg viewBox="0 0 880 372" role="img" aria-label="Architekturdiagramm: Spieler verbinden über mc-router direkt zu den Containern im Docker-Netz; Browser gehen über die Next.js-App und Redis zum Node-Agent, der über den Docker-Socket die Container steuert.">
+            <defs>
+              <marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+                <path d="M0,0 L8,4 L0,8 z" fill="var(--ink-3)"></path>
+              </marker>
+              <marker id="ahs" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+                <path d="M0,0 L8,4 L0,8 z" fill="var(--rule-2)"></path>
+              </marker>
+            </defs>
+
+            <!-- Spielerpfad -->
+            <rect class="d-box" x="16" y="40" width="140" height="52" rx="4"></rect>
+            <text class="d-label" x="86" y="62" text-anchor="middle">Spieler</text>
+            <text class="d-sub" x="86" y="78" text-anchor="middle">Minecraft-Client</text>
+
+            <rect class="d-box-accent" x="216" y="40" width="150" height="52" rx="4"></rect>
+            <text class="d-label" x="291" y="62" text-anchor="middle">mc-router</text>
+            <text class="d-sub" x="291" y="78" text-anchor="middle">:25565 · nur dieser Port</text>
+
+            <path class="d-line" d="M156,66 H210" marker-end="url(#ah)"></path>
+            <path class="d-line" d="M366,66 H714" marker-end="url(#ah)"></path>
+            <text class="d-flowlabel" x="540" y="58" text-anchor="middle">HOSTNAME AUS HANDSHAKE</text>
+
+            <!-- Steuerpfad -->
+            <rect class="d-box" x="16" y="180" width="140" height="52" rx="4"></rect>
+            <text class="d-label" x="86" y="202" text-anchor="middle">Browser</text>
+            <text class="d-sub" x="86" y="218" text-anchor="middle">Web-Panel</text>
+
+            <rect class="d-box-accent" x="216" y="180" width="150" height="52" rx="4"></rect>
+            <text class="d-label" x="291" y="202" text-anchor="middle">Next.js</text>
+            <text class="d-sub" x="291" y="218" text-anchor="middle">Auth · UI · API</text>
+
+            <rect class="d-box" x="426" y="180" width="130" height="52" rx="4"></rect>
+            <text class="d-label" x="491" y="202" text-anchor="middle">Redis</text>
+            <text class="d-sub" x="491" y="218" text-anchor="middle">BullMQ-Queue</text>
+
+            <rect class="d-box-accent" x="616" y="180" width="140" height="52" rx="4"></rect>
+            <text class="d-label" x="686" y="202" text-anchor="middle">Node-Agent</text>
+            <text class="d-sub" x="686" y="218" text-anchor="middle">Worker + Docker</text>
+
+            <path class="d-line" d="M156,206 H210" marker-end="url(#ah)"></path>
+            <path class="d-line" d="M366,206 H420" marker-end="url(#ah)"></path>
+            <path class="d-line" d="M556,206 H610" marker-end="url(#ah)"></path>
+
+            <!-- Postgres -->
+            <rect class="d-box" x="216" y="290" width="150" height="52" rx="4"></rect>
+            <text class="d-label" x="291" y="312" text-anchor="middle">Postgres</text>
+            <text class="d-sub" x="291" y="328" text-anchor="middle">Wahrheit über Zustand</text>
+            <path class="d-line" d="M291,232 V284" marker-end="url(#ah)"></path>
+
+            <!-- Socket -->
+            <rect class="d-box" x="616" y="290" width="140" height="52" rx="4"></rect>
+            <text class="d-sub" x="686" y="313" text-anchor="middle">/var/run/</text>
+            <text class="d-sub" x="686" y="327" text-anchor="middle">docker.sock</text>
+            <path class="d-line" d="M686,232 V284" marker-end="url(#ah)"></path>
+
+            <!-- Agent steuert Container -->
+            <path class="d-line-soft" d="M756,193 H814 V152" marker-end="url(#ahs)"></path>
+
+            <!-- mc-net -->
+            <rect class="d-group" x="782" y="20" width="86" height="132" rx="4"></rect>
+            <text class="d-sub" x="825" y="14" text-anchor="middle">MC-NET</text>
+            <rect class="d-box" x="792" y="34" width="66" height="30" rx="3"></rect>
+            <text class="d-sub" x="825" y="53" text-anchor="middle">srv-a</text>
+            <rect class="d-box" x="792" y="72" width="66" height="30" rx="3"></rect>
+            <text class="d-sub" x="825" y="91" text-anchor="middle">srv-b</text>
+            <rect class="d-box" x="792" y="110" width="66" height="30" rx="3"></rect>
+            <text class="d-sub" x="825" y="129" text-anchor="middle">srv-c</text>
+          </svg>
+        </div>
+        <figcaption>Die Container veröffentlichen selbst keine Ports. Erreichbar sind sie ausschließlich über <code>mc-net</code> — für Spieler durch den Router, für die Steuerung durch den Agent.</figcaption>
+      </figure>
+
+      <h3>Dienste in v1</h3>
+      <div class="scroller">
+        <table>
+          <thead>
+            <tr><th>Dienst</th><th>Läuft als</th><th>Aufgabe</th><th>Docker-Socket</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>app</code></td><td>Container (Next.js)</td><td>Panel, Auth, REST, SSE-Proxy</td><td><span class="chip ok">nein</span></td></tr>
+            <tr><td><code>agent</code></td><td><strong>systemd-Unit auf dem Host</strong></td><td>Queue-Worker, Docker-API, ZFS, Dateizugriff, Log-/Stats-Streams</td><td><span class="chip crit">ja</span></td></tr>
+            <tr><td><code>mc-router</code></td><td>Container <code>itzg/mc-router</code></td><td>Hostname-Routing auf :25565</td><td><span class="chip ok">nein</span></td></tr>
+            <tr><td><code>postgres</code></td><td>Container <code>postgres:17</code></td><td>Nutzer, Pläne, Server, Audit</td><td><span class="chip ok">nein</span></td></tr>
+            <tr><td><code>redis</code></td><td>Container <code>redis:7</code></td><td>BullMQ, Rate-Limits, Sessions-Cache</td><td><span class="chip ok">nein</span></td></tr>
+            <tr><td><code>caddy</code></td><td>Container <code>caddy:2</code></td><td>TLS und Reverse-Proxy fürs Panel</td><td><span class="chip ok">nein</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Der Agent ist als einziger Baustein <em>kein</em> Container. Er muss <code>zfs create</code>, <code>zfs snapshot</code> und <code>zfs rollback</code> ausführen, und das ginge aus einem Container heraus nur mit <code>--privileged</code> — also mit mehr Rechten, nicht mit weniger. Da er ohnehin den Docker-Socket hält und damit root-gleichwertig ist, gewinnt eine Container-Grenze hier nichts. Stattdessen bekommt er ein eigenes Dienstkonto, per <code>zfs allow</code> delegierte Rechte nur unterhalb von <code>tank/mc</code>, und lauscht ausschließlich auf <code>127.0.0.1</code>.</p>
+      <p><code>app</code> erreicht ihn über <code>host.docker.internal</code> mit statischem Bearer-Token. Der Agent-Port ist von außen nie sichtbar.</p>
+    </section>
+
+    <!-- 03 -->
+    <section id="netzwerk">
+      <h2>Netzwerk</h2>
+      <p>Das Minecraft-Protokoll sendet im Handshake-Paket die Adresse mit, die der Spieler eingetippt hat. Genau daraus liest <code>mc-router</code> das Ziel — deshalb genügt ein einziger offener Port für beliebig viele Server.</p>
+
+      <h3>Aufbau</h3>
+      <ul class="list">
+        <li>Wildcard-DNS: <code>*.mc.example.com</code> → öffentliche IP des Hosts. Ein A-Record, danach nie wieder DNS anfassen.</li>
+        <li>Beim Anlegen erhält jeder Server ein Subdomain-Label (<code>subdomain</code>, unique, <code>^[a-z0-9][a-z0-9-]{2,30}$</code>, Sperrliste für <code>www</code>, <code>api</code>, <code>admin</code>).</li>
+        <li>Der Agent registriert die Route über die REST-API des Routers: Hostname → <code>container-name:25565</code>. Kein zweiter Socket-Zugriff nötig.</li>
+        <li>Der Router hält Routen nur im Speicher. Deshalb beim Agent-Start ein <strong>Reconcile-Lauf</strong>. Die Soll-Liste kommt dabei aus den <em>Container-Labels</em>, nicht aus der Datenbank — so stellt der Agent die Routen auch dann wieder her, wenn er die App gerade nicht erreicht.</li>
+        <li>Beim Löschen zuerst die Route entfernen, dann den Container. Andersherum liefe ein Spieler für einen Moment gegen einen Backend-Namen, den es nicht mehr gibt.</li>
+      </ul>
+
+      <div class="callout risk">
+        <strong>Das Verbindungslimit des Routers ist standardmäßig 1 pro Sekunde.</strong>
+        <span>Das reicht nicht: Nach einem Neustart kommen mehrere Spieler gleichzeitig zurück, und ab dem zweiten pro Sekunde wird abgewiesen. In der Umsetzung auf 20 gesetzt. Ein Wert, den man kennen muss, bevor die ersten Beschwerden kommen.</span>
+      </div>
+
+      <div class="callout">
+        <strong>Erreichbarkeit lässt sich ohne DNS und ohne Client prüfen.</strong>
+        <span>Der Server-List-Ping schickt den Hostnamen im Handshake mit — unabhängig davon, wohin die TCP-Verbindung geht. Damit ist das Routing vollständig testbar, indem man sich zum Router verbindet und den gewünschten Hostnamen behauptet. Das Panel nutzt genau das für seine Erreichbarkeitsanzeige und bekommt Spielerzahl, Version und MOTD gleich mit. Ein laufender Container ohne Route fällt so auf — sonst nirgends.</span>
+      </div>
+
+      <div class="callout risk">
+        <strong>Zwei Grenzen dieser Wahl, die man kennen muss.</strong>
+        <span>Erstens: Bedrock-Clients sprechen ein anderes Protokoll (RakNet/UDP) und werden <em>nicht</em> mitgeroutet — dafür bräuchte es später GeyserMC pro Server oder einen eigenen Bedrock-Proxy. Zweitens: Server-Pings von Client-Listen laufen ebenfalls über den Router, ein langsamer Backend-Container verzögert also die Statusanzeige. Beides ist für v1 akzeptabel, sollte aber nicht überraschen.</span>
+      </div>
+
+      <h3>Firewall auf dem Host</h3>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Port</th><th>Protokoll</th><th>Offen für</th><th>Zweck</th></tr></thead>
+          <tbody>
+            <tr><td class="num">443</td><td>TCP</td><td>Welt</td><td>Panel</td></tr>
+            <tr><td class="num">80</td><td>TCP</td><td>Welt</td><td>ACME-Challenge, Redirect</td></tr>
+            <tr><td class="num">25565</td><td>TCP</td><td>Welt</td><td>mc-router, sämtlicher Spieler-Traffic</td></tr>
+            <tr><td class="num">22</td><td>TCP</td><td>Admin-IPs</td><td>SSH</td></tr>
+            <tr><td>—</td><td>—</td><td>—</td><td>Alles andere zu: kein Container-Port, kein RCON, kein Postgres nach außen</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 04 -->
+    <section id="container">
+      <h2>Container-Modell</h2>
+      <p>Basis ist <code>itzg/minecraft-server</code>. Das Image nimmt einem den kompletten unangenehmen Teil ab: Download der Server-Jar, EULA, Paper/Fabric/Forge-Varianten, RCON, sauberes Herunterfahren bei SIGTERM. Ein eigenes Image zu bauen wäre in dieser Phase verschenkte Zeit.</p>
+
+      <h3>Erzeugung eines Containers</h3>
+      <pre><code><span class="c"># Alles Variable kommt aus Plan + Server-Datensatz, nichts aus User-Eingaben direkt</span>
+name:   mc-{server.id}
+image:  itzg/minecraft-server:java21
+labels: saas.serverId={id}, saas.userId={uid}
+network: mc-net          <span class="c"># keine published ports</span>
+volumes: /srv/mc/{id}:/data
+
+env:
+  EULA=TRUE
+  TYPE=PAPER                    <span class="c"># aus server.serverType</span>
+  VERSION=1.21.8                <span class="c"># aus server.mcVersion</span>
+  MAX_MEMORY=3G                 <span class="c"># NICHT gleich dem Container-Limit, s.u.</span>
+  USE_AIKAR_FLAGS=true
+  ENABLE_RCON=true
+  RCON_PASSWORD={random 32}     <span class="c"># pro Server, nie ans Frontend</span>
+  MAX_PLAYERS=20                <span class="c"># aus Plan</span>
+  OVERRIDE_SERVER_PROPERTIES=true
+
+hostConfig:
+  Memory:        4294967296     <span class="c"># plan.memoryMb</span>
+  MemorySwap:    4294967296     <span class="c"># = Memory, also kein Swap</span>
+  NanoCpus:      2000000000     <span class="c"># plan.cpuCores * 1e9</span>
+  PidsLimit:     512            <span class="c"># gegen Fork-Bomben aus Mods</span>
+  SecurityOpt:   ["no-new-privileges:true"]
+  CapDrop:       ["ALL"]
+  CapAdd:        ["CHOWN","DAC_OVERRIDE","FOWNER","SETGID","SETUID"]
+  RestartPolicy: unless-stopped
+  StopTimeout:   120            <span class="c"># Welt muss speichern dürfen</span>
+  LogConfig:     json-file, max-size=20m, max-file=3</code></pre>
+
+      <div class="callout risk">
+        <strong><code>CapDrop: ALL</code> allein lässt den Container nicht starten.</strong>
+        <span>Das Image beginnt als root, setzt die Eigentümer von <code>/data</code> und wechselt dann auf UID 1000. Ohne <code>SETUID</code>/<code>SETGID</code> scheitert genau dieser Wechsel mit <code>failed switching to 'minecraft:minecraft': operation not permitted</code>, und der Container läuft in eine Neustartschleife — die die Restart-Policy zusätzlich verschleiert. Die fünf zurückgegebenen Rechte sind das Minimum; weg sind damit trotzdem unter anderem <code>NET_RAW</code>, <code>MKNOD</code>, <code>SYS_CHROOT</code> und <code>SETFCAP</code>.</span>
+      </div>
+
+      <div class="callout">
+        <strong>Der Heap muss kleiner sein als das Container-Limit.</strong>
+        <span>Die JVM braucht zusätzlich zum Heap noch Metaspace, Thread-Stacks, Direct Buffers und GC-Strukturen. Setzt man <code>MAX_MEMORY</code> gleich dem Docker-Limit, killt der OOM-Killer den Server irgendwann mitten im Spiel — und zwar hart, ohne zu speichern. Faustregel: <code>MAX_MEMORY = limit − max(768 MB, limit × 0,15)</code>. Bei 4 GB Limit also 3 GB Heap.</span>
+      </div>
+
+      <h3>Sauber stoppen</h3>
+      <p>Ein <code>docker kill</code> auf einen Minecraft-Server kann Chunk-Dateien zerreißen. Die Sequenz ist deshalb zweistufig plus Notausgang:</p>
+      <ul class="list">
+        <li>RCON <code>save-all flush</code> — die Welt liegt danach nachweislich auf Platte.</li>
+        <li><code>docker stop -t 120</code>. SIGTERM reicht das Image korrekt an die JVM weiter, die noch einmal speichert.</li>
+        <li>Nur wenn das scheitert: <code>kill</code>. Dieser Fall wandert ins Audit-Log, weil er auf ein Problem hinweist.</li>
+      </ul>
+
+      <div class="callout risk">
+        <strong>Kein RCON-<code>stop</code> — das kämpft gegen die Restart-Policy.</strong>
+        <span>Naheliegend wäre, den Server über RCON <code>stop</code> herunterzufahren. Dabei beendet sich der Prozess aber von selbst, Docker wertet das nicht als beabsichtigtes Stoppen, und <code>RestartPolicy: unless-stopped</code> startet den Container Sekunden später wieder. In der Umsetzung nachgemessen: <code>RestartCount</code> springt von 0 auf 1, der Server ist wieder oben. Nur <code>docker stop</code> markiert den Container als absichtlich gestoppt. RCON dient hier ausschließlich dem Speichern.</span>
+      </div>
+
+      <h3>Ressourcen-Buchhaltung</h3>
+      <p>Vor jedem Anlegen prüft der Agent gegen die <code>Node</code>-Kapazität:</p>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Ressource</th><th>Überbuchen?</th><th>Begründung</th></tr></thead>
+          <tbody>
+            <tr><td>RAM</td><td><span class="chip crit">nie</span></td><td>Die JVM belegt ihren Heap tatsächlich und gibt ihn kaum zurück. Überbuchen führt direkt zu OOM-Kills auf dem Host.</td></tr>
+            <tr><td>CPU</td><td><span class="chip ok">Faktor 2–3</span></td><td>Server sind die meiste Zeit idle. <code>NanoCpus</code> deckelt Spitzen, ohne Kerne exklusiv zu binden.</td></tr>
+            <tr><td>Disk</td><td><span class="chip warn">nur knapp</span></td><td>Welten wachsen unbegrenzt, wenn Spieler weit laufen. Harte Quota nötig, siehe nächster Abschnitt.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Reservierte Menge für Host-OS, Postgres und Agent gehört als <code>node.reservedMemoryMb</code> ins Modell und wird von der Kapazität abgezogen — sonst füllt der erste erfolgreiche Monat den Host bis zum Anschlag.</p>
+    </section>
+
+    <!-- 05 -->
+    <section id="speicher">
+      <h2>Speicher und Quotas</h2>
+      <p>Das ist der Punkt, an dem Docker weniger hilft, als man erwartet. <code>--storage-opt size=</code> begrenzt nur die beschreibbare Container-Schicht auf overlay2, und auch das nur auf XFS mit <code>pquota</code>. Für Bind-Mounts — und die brauchen wir, weil Weltdaten einen Neustart überleben müssen — greift es überhaupt nicht.</p>
+
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Ansatz</th><th>Harte Grenze</th><th>Einrichtung</th><th>Bewertung</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>ZFS-Dataset pro Server<br><code>zfs create -o quota=10G …</code></td>
+              <td><span class="chip ok">ja</span></td>
+              <td>ZFS auf dem Datenträger</td>
+              <td>Sauberste Lösung. Quota-Änderung bei Plan-Upgrade ist ein Befehl, Snapshots gibt es gratis dazu.</td>
+            </tr>
+            <tr>
+              <td>XFS/ext4 Project-Quota<br><code>xfs_quota -x -c 'limit -p …'</code></td>
+              <td><span class="chip ok">ja</span></td>
+              <td><code>prjquota</code> als Mount-Option</td>
+              <td>Funktioniert mit gewöhnlichen Verzeichnissen und Bind-Mounts. Pro Server eine Project-ID, die in der DB mitgeführt wird.</td>
+            </tr>
+            <tr>
+              <td>Soft-Quota per <code>du</code>-Job</td>
+              <td><span class="chip warn">nein</span></td>
+              <td>keine</td>
+              <td>Nur Rückfallposition. Alle 10 Min. messen → Warnung → Upload-Sperre → Suspend. Ein Server kann die Platte trotzdem volllaufen lassen.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout">
+        <strong>Entschieden: ZFS.</strong>
+        <span>Der Host wird frisch aufgesetzt, damit fällt die Wahl eindeutig — nicht wegen der Quotas, die beide Wege können, sondern wegen der Snapshots. Sie verkürzen das Backup-Fenster von Minuten auf eine Sekunde und machen den Restore zu einem <code>zfs rollback</code>. Der Preis ist der ARC-Cache, der gedeckelt und in <code>node.reservedMemoryMb</code> eingerechnet werden muss. Die konkreten Befehle stehen im Host-Runbook.</span>
+      </div>
+
+      <p>Ein Dataset pro Server: <code>tank/mc/srv-{id}</code> mit <code>quota</code>, eingehängt unter <code>/srv/mc/srv-{id}</code> und als Bind-Mount im Container. Plan-Upgrade heißt <code>zfs set quota=…</code> — kein Neustart, kein Kopieren. Belegter Platz kommt aus <code>zfs list</code> statt aus einem Verzeichnis-Scan, was bei großen Welten den Unterschied zwischen Millisekunden und Sekunden macht.</p>
+      <p>Backups liegen unter <code>tank/backups</code>, außerhalb der Server-Quota und mit eigenem Limit über <code>plan.maxBackups</code>. Sonst frisst das erste Backup die Hälfte des gebuchten Speichers.</p>
+    </section>
+
+    <!-- 06 -->
+    <section id="daten">
+      <h2>Datenmodell</h2>
+      <p>Skizze in Prisma-Notation, gekürzt auf die tragenden Felder.</p>
+      <pre><code><span class="k">model</span> User      { id, email, passwordHash, role: USER|ADMIN, emailVerified, createdAt }
+<span class="k">model</span> Plan      { id, name, memoryMb, cpuCores, diskMb, maxPlayers, maxBackups,
+                    priceCents, isPublic, createdAt }        <span class="c">// = "Template" des Admins</span>
+<span class="k">model</span> Subscription { id, userId, planId, status, currentPeriodEnd,
+                    externalId? }                            <span class="c">// Stripe-Andockpunkt, P8</span>
+<span class="k">model</span> Node      { id, name, agentUrl, agentToken, publicHost,
+                    totalMemoryMb, totalCpuCores, totalDiskMb,
+                    reservedMemoryMb, status }               <span class="c">// v1: genau eine Zeile</span>
+<span class="k">model</span> Server    { id, userId, nodeId, planId, name, subdomain @unique,
+                    containerId?, status, serverType, mcVersion,
+                    rconPassword, dataPath, quotaProjectId?,
+                    createdAt, suspendedAt? }
+<span class="k">model</span> Backup    { id, serverId, path, sizeBytes, status, createdAt }
+<span class="k">model</span> AuditLog  { id, userId?, serverId?, action, meta: Json, ip, createdAt }</code></pre>
+
+      <h3>Warum Plan-Werte auf den Server kopiert werden</h3>
+      <p>Ändert ein Admin einen Plan, dürfen laufende Server nicht stillschweigend ihre Grenzen wechseln — der Container müsste dafür neu erstellt werden. Deshalb hält <code>Server</code> die <em>tatsächlich angewandten</em> Werte (<code>appliedMemoryMb</code> usw.) zusätzlich zur <code>planId</code>. Das Panel zeigt dann „Plan geändert, Neustart nötig", statt dass Buchhaltung und Realität auseinanderlaufen.</p>
+      <p><code>rconPassword</code> wird zufällig pro Server erzeugt und verlässt den Server-Prozess nie. Es ist ein internes Steuergeheimnis, kein Nutzer-Feature.</p>
+    </section>
+
+    <!-- 07 -->
+    <section id="lifecycle">
+      <h2>Zustände und Jobs</h2>
+      <p>Alles, was länger als eine Anfrage dauert, läuft als BullMQ-Job. Das Panel schreibt nur den gewünschten Zustand in die DB und stellt einen Job ein; der Agent gleicht ab.</p>
+
+      <pre><code>PROVISIONING ──▶ STOPPED ⇄ STARTING ──▶ RUNNING ──▶ STOPPING ──▶ STOPPED
+      │                                     │
+      ▼                                     ▼
+   FAILED                              SUSPENDED ──▶ DELETING ──▶ (weg)</code></pre>
+
+      <div class="callout">
+        <strong>Container läuft ≠ Server ist da.</strong>
+        <span>Nach <code>docker start</code> lädt Minecraft je nach Modpack 20 bis 120 Sekunden Welt, bevor jemand joinen kann. <code>RUNNING</code> darf deshalb erst gesetzt werden, wenn der Agent im Log die Zeile <code>Done (…s)! For help, type "help"</code> gesehen hat. Sonst zeigt das Panel „online", der Spieler bekommt Connection Refused, und der Support-Ticket-Stapel wächst.</span>
+      </div>
+
+      <div class="callout">
+        <strong>Und die Logzeile allein reicht auch noch nicht.</strong>
+        <span>In der Umsetzung zeigte sich: Unmittelbar nach dem Marker schlug der erste RCON-Befehl mit „Verbindung geschlossen“ fehl, eine Minute später ging derselbe Befehl. Die Portweiterleitung nimmt Verbindungen bereits an, während der Server dahinter noch nicht bedient. Der Agent bestätigt deshalb nach dem Marker mit einem echten RCON-Kommando, dass der Server <em>steuerbar</em> ist — erst das heißt bereit. Ohne diese Bestätigung scheitert jede Aktion, die das Panel direkt nach dem Start auslöst.</span>
+      </div>
+
+      <h3>Jobs</h3>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Job</th><th>Tut</th><th>Idempotent?</th></tr></thead>
+          <tbody>
+            <tr><td><code>server.provision</code></td><td>Verzeichnis + Quota anlegen, Container erstellen, Route registrieren</td><td>ja, über <code>serverId</code> als Job-Key</td></tr>
+            <tr><td><code>server.start</code></td><td>Container starten, auf Ready-Log warten, Status setzen</td><td>ja</td></tr>
+            <tr><td><code>server.stop</code></td><td>Dreistufige Stopp-Sequenz</td><td>ja</td></tr>
+            <tr><td><code>server.recreate</code></td><td>Bei Plan- oder Versionswechsel: stoppen, Container ersetzen, Daten bleiben. Das Image wird <em>vor</em> dem Entfernen gezogen — sonst stünde ein Nutzer nach einem fehlgeschlagenen Download ohne Container da.</td><td>ja</td></tr>
+            <tr><td><code>server.delete</code></td><td>Route entfernen, Container weg, Daten weg, Backups nach Karenzzeit</td><td>ja</td></tr>
+            <tr><td><code>backup.create</code></td><td>Snapshot, siehe unten</td><td>nein, erzeugt jedes Mal neuen Datensatz</td></tr>
+            <tr><td><code>node.reconcile</code></td><td>Beim Start und alle 5 Min.: DB-Zustand gegen Docker-Realität abgleichen, Routen neu setzen</td><td>ja</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><code>node.reconcile</code> ist kein Extra, sondern die Grundlage dafür, dass das System einen Host-Neustart oder einen abgestürzten Agent überlebt. Es zieht auch verwaiste Container ein, die keinem DB-Eintrag mehr entsprechen.</p>
+    </section>
+
+    <!-- 08 -->
+    <section id="konsole">
+      <h2>Konsole, Live-Daten und Dateien</h2>
+
+      <h3>Warum SSE und nicht WebSocket</h3>
+      <p>Next.js Route Handlers können nativ keine WebSockets terminieren — dafür bräuchte es einen eigenen HTTP-Server neben dem Framework. Das ist hier unnötig, weil der Datenfluss ohnehin asymmetrisch ist: Logs und Statistiken fließen nur nach unten, Befehle sind einzelne POSTs.</p>
+      <ul class="list">
+        <li><strong>Logs</strong> — <code>GET /api/servers/:id/logs</code> als Server-Sent Events. Die App proxied den Stream vom Agent, der Agent liest <code>docker logs?follow=1&amp;tail=200</code>. Wichtig: Der Docker-Stream ist bei <code>Tty: false</code> multiplexed und trägt einen 8-Byte-Header pro Frame. Wer den nicht abschneidet, bekommt Steuerzeichen in der Konsole.</li>
+        <li><strong>Befehle</strong> — <code>POST /api/servers/:id/command</code> geht über RCON, nicht über stdin. Rate-Limit pro Server, jeder Befehl ins Audit-Log. <code>stop</code> und <code>restart</code> werden abgefangen und in die richtigen Jobs umgeleitet, damit der Status konsistent bleibt.</li>
+        <li><strong>Statistiken</strong> — der Agent hält <em>einen</em> <code>docker stats</code>-Poller pro Container und verteilt das Ergebnis an alle Zuschauer. Eine Stats-Verbindung pro geöffnetem Browser-Tab bringt den Docker-Daemon bei 30 Servern in Schwierigkeiten.</li>
+      </ul>
+
+      <div class="callout risk">
+        <strong>Die erste Messung von <code>docker stats</code> ist kein Messwert.</strong>
+        <span>Docker liefert Rohzähler, und im ersten Paket eines Streams stehen die Vorgängerwerte auf null. Rechnet man damit, ergibt die Differenz die gesamte bisherige Laufzeit des Containers — die Anzeige beginnt also regelmäßig mit 100 % CPU und mehr. In der Umsetzung erst durch einen Test aufgefallen; der erste Wert wird jetzt als 0 gemeldet.</span>
+      </div>
+
+      <div class="callout">
+        <strong>Beim Speicher muss der Dateicache abgezogen werden.</strong>
+        <span><code>memory_stats.usage</code> enthält Seiten, die der Kernel jederzeit freigeben kann. Zählt man sie mit, sieht eine JVM, die viel von der Platte liest, dauerhaft aus wie kurz vor dem Limit — und Nutzer buchen einen größeren Tarif, den sie nicht brauchen. Abzuziehen ist <code>inactive_file</code> (cgroup v2) beziehungsweise <code>cache</code> (cgroup v1).</span>
+      </div>
+
+      <h3>Dateimanager</h3>
+      <p>Der Agent bietet <code>list · read · write · mkdir · delete · upload</code> unterhalb von <code>/srv/mc/{id}</code>. Die einzige Regel, die wirklich zählt:</p>
+      <pre><code><span class="k">const</span> full = await fs.realpath(path.resolve(base, userPath))
+<span class="k">if</span> (full !== base &amp;&amp; !full.startsWith(base + path.sep)) throw Forbidden()</code></pre>
+      <p><code>realpath</code> vor der Prüfung ist nicht optional: ohne die Auflösung kann ein im Container angelegter Symlink aus dem Verzeichnis herauszeigen, und der Agent folgt ihm mit seinen Rechten. Dazu Obergrenzen für Upload-Größe und Dateianzahl, und Editieren nur für Textdateien unterhalb einer Größenschwelle.</p>
+
+      <div class="callout risk">
+        <strong>Der Prefix-Vergleich braucht das Trennzeichen.</strong>
+        <span>Ein <code>startsWith(base)</code> ohne angehängtes <code>/</code> lässt <code>/srv/mc/a-backup</code> als Kind von <code>/srv/mc/a</code> durchgehen. Klassischer Fehler, in der Umsetzung als eigener Testfall festgehalten.</span>
+      </div>
+
+      <div class="callout risk">
+        <strong>Neue Dateien lassen sich nicht mit <code>realpath</code> prüfen — sie existieren ja noch nicht.</strong>
+        <span>Ein naives <code>realpath(ziel)</code> wirft <code>ENOENT</code>, und wer daraufhin ungeprüft weitermacht, hat das Loch wieder offen. Die Umsetzung löst deshalb den tiefsten <em>vorhandenen</em> Vorfahren auf und hängt den fehlenden Rest wieder an. Erst danach greift der Prefix-Vergleich.</span>
+      </div>
+
+      <div class="callout">
+        <strong>Zwei Klassen von Dingen bleiben gesperrt.</strong>
+        <span><code>eula.txt</code>, weil ein Nutzer den Server sonst unstartbar macht. Und in <code>server.properties</code> alles rund um RCON und Ports: <code>enable-rcon</code>, <code>rcon.password</code>, <code>server-port</code>. Über diese Werte steuert das Panel den Server — wer sie ändern kann, nimmt ihm die Kontrolle über den eigenen Container oder macht ihn für mc-router unerreichbar. Abgewiesene Schlüssel werden dem Nutzer gemeldet, nicht still verschluckt.</span>
+      </div>
+      <h3>Version und Software wechseln</h3>
+      <p>Docker schreibt Umgebungsvariablen und Speichergrenzen beim Anlegen fest; ein Update der laufenden Konfiguration gibt es nicht. Jeder Wechsel bedeutet also: stoppen, Container entfernen, neu anlegen. Die Weltdaten liegen als Bind-Mount außerhalb und bleiben unberührt.</p>
+
+      <div class="callout risk">
+        <strong>Eine Rückstufung ist nicht rückgängig zu machen.</strong>
+        <span>Minecraft wandelt die Welt beim Hochstufen um und schreibt eine höhere <code>DataVersion</code> in <code>level.dat</code>. Ein älterer Server weigert sich danach zu starten oder lädt die Welt fehlerhaft — einen unterstützten Weg zurück gibt es nicht. Das Panel erkennt die Richtung selbst, warnt ausdrücklich und verlangt eine Bestätigung. Bei <code>LATEST</code> lässt sich die Richtung nicht feststellen; dann erscheint die Warnung vorsichtshalber.</span>
+      </div>
+
+      <div class="callout risk">
+        <strong>Image ziehen, bevor der alte Container fällt.</strong>
+        <span>Die naheliegende Reihenfolge — entfernen, dann neu anlegen — lässt den Nutzer bei einem fehlgeschlagenen Download ohne Container zurück: Daten heil, aber kein Server. Deshalb wird das Image zuerst geholt und erst danach ersetzt.</span>
+      </div>
+
+      <p>Mods und Plugins sind in v1 schlicht Uploads nach <code>/mods</code> bzw. <code>/plugins</code> mit anschließendem Neustart-Hinweis. Die Modrinth-API für Suche und Ein-Klick-Installation ist ein lohnendes v2-Feature, aber kein Fundament.</p>
+    </section>
+
+    <!-- 09 -->
+    <section id="backups">
+      <h2>Backups</h2>
+      <p>Ein <code>tar</code> über ein laufendes Weltverzeichnis erzeugt inkonsistente Region-Dateien. Der Server muss also während des Backups aufhören zu schreiben — und genau deshalb ist der Snapshot so viel besser als das Archiv: er ist atomar und praktisch sofort fertig.</p>
+      <pre><code>RCON: save-off                       <span class="c"># Server schreibt nicht mehr auf Platte</span>
+RCON: save-all flush                 <span class="c"># alles Ausstehende jetzt raus</span>
+zfs snapshot tank/mc/srv-{id}@{ts}   <span class="c"># atomar, ~1 Sekunde</span>
+RCON: save-on                        <span class="c"># IMMER, auch bei Fehler (finally)</span></code></pre>
+      <p>Das Schreibfenster schrumpft damit von Minuten auf etwa eine Sekunde. Spieler merken davon nichts, und Backups können stündlich statt nächtlich laufen, weil nur die Deltas Platz kosten.</p>
+      <p>Das <code>save-on</code> gehört trotzdem zwingend in einen <code>finally</code>-Block. Bleibt ein Server nach einem fehlgeschlagenen Backup im <code>save-off</code>-Zustand, verliert er beim nächsten Absturz alles seit dem Backup — und niemand merkt es, bis es zu spät ist.</p>
+      <div class="callout risk">
+        <strong>Rotation erst nach dem erfolgreichen Snapshot.</strong>
+        <span>Naheliegend wäre, vor dem Anlegen Platz zu schaffen. Scheitert der neue Snapshot dann, steht man ohne das gelöschte alte da — also mit einer Sicherung weniger als vorher, ausgerechnet im Fehlerfall. Die Umsetzung räumt deshalb erst auf, wenn der neue Snapshot steht.</span>
+      </div>
+
+      <div class="callout">
+        <strong>Zurückspielen setzt einen gestoppten Server voraus.</strong>
+        <span>Ein Rollback unter einem laufenden Server zieht ihm die Weltdateien unter den Füßen weg; er schreibt danach in Chunks, die es nicht mehr gibt. Der Agent stoppt deshalb selbst, spielt zurück und startet wieder — und merkt sich dabei, ob der Server vorher überhaupt lief. Ein gestoppter Server bleibt gestoppt.</span>
+      </div>
+
+      <h3>Restore, Rotation, Export</h3>
+      <ul class="list">
+        <li><strong>Restore</strong> — Server stoppen, <code>zfs rollback tank/mc/srv-{id}@{ts}</code>, starten. Sekunden statt Minuten, als ein Job mit Zwischenstatus, damit das Panel nicht „online" behauptet.</li>
+        <li><strong>Rotation</strong> — <code>zfs destroy</code> auf den ältesten Snapshot, sobald <code>plan.maxBackups</code> überschritten ist.</li>
+        <li><strong>Download</strong> — <code>zfs send</code> des Snapshots, komprimiert, hinter einer ablaufenden Signatur. Nur auf Anforderung, nicht bei jedem Backup.</li>
+      </ul>
+      <div class="callout risk">
+        <strong>Snapshots im selben Pool sind kein Schutz gegen Plattenausfall.</strong>
+        <span>Sie decken den Fall ab, der täglich vorkommt — Griefing, kaputtes Plugin, versehentliches Löschen. Stirbt die NVMe, sind Welten und Snapshots gleichzeitig weg. Dafür braucht es ein nächtliches <code>zfs send -I</code> auf den zweiten Pool. Das ist ein Betriebs-Job in P8, kein Nutzer-Feature, und darf im Panel nicht als „Backup" firmieren, sonst verspricht die UI etwas Falsches.</span>
+      </div>
+    </section>
+
+    <!-- 10 -->
+    <section id="sicherheit">
+      <h2>Sicherheit</h2>
+      <p>Nutzer laden fremden Java-Code hoch und lassen ihn auf deinem Rechner laufen. Das ist der Kern des Produkts und lässt sich nicht wegdesignen — es lässt sich nur eingrenzen.</p>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Risiko</th><th>Schwere</th><th>Gegenmaßnahme</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Docker-Socket entspricht Root auf dem Host</td>
+              <td><span class="chip crit">kritisch</span></td>
+              <td>Nur der Agent hat ihn. Agent-Port nie veröffentlicht, Zugriff nur aus dem internen Netz mit Token. Niemals Nutzereingaben ungeprüft in Docker-Parameter.</td>
+            </tr>
+            <tr>
+              <td>Pfad-Traversal im Dateimanager</td>
+              <td><span class="chip crit">kritisch</span></td>
+              <td><code>realpath</code> plus Prefix-Prüfung, siehe oben. Der häufigste echte Einbruchsweg in Hosting-Panels.</td>
+            </tr>
+            <tr>
+              <td>Mod führt beliebigen Code aus</td>
+              <td><span class="chip warn">akzeptiert</span></td>
+              <td>Der Container <em>ist</em> die Grenze: <code>no-new-privileges</code>, non-root (uid 1000), kein Host-Netz, kein Socket, <code>PidsLimit</code>. Dateiendungen zu prüfen ist Theater.</td>
+            </tr>
+            <tr>
+              <td>Ausgehender Missbrauch: Mining, DDoS, Spam</td>
+              <td><span class="chip warn">hoch</span></td>
+              <td>Eigenes Netz ohne Zugriff auf App/DB, Egress-Regeln, Alarm bei Dauerlast auf allen Kernen. Der realistischste Missbrauchsfall bei kostenlosen Testservern.</td>
+            </tr>
+            <tr>
+              <td>Unbegrenztes Anlegen von Servern</td>
+              <td><span class="chip warn">hoch</span></td>
+              <td>E-Mail-Verifikation vor dem ersten Server, harte Obergrenze pro Nutzer, Rate-Limit auf dem Anlegen-Endpunkt.</td>
+            </tr>
+            <tr>
+              <td>RCON-Passwort im Frontend</td>
+              <td><span class="chip crit">kritisch</span></td>
+              <td>Bleibt serverseitig. Das Panel sendet Befehle, nie Zugangsdaten.</td>
+            </tr>
+            <tr>
+              <td>Veraltete Images (Log4Shell-Klasse)</td>
+              <td><span class="chip warn">mittel</span></td>
+              <td>Image-Tags pinnen, geplantes Update-Fenster, <code>server.recreate</code> existiert ohnehin schon dafür.</td>
+            </tr>
+            <tr>
+              <td>Ressourcenerschöpfung durch einen Container</td>
+              <td><span class="chip ok">gedeckt</span></td>
+              <td><code>Memory</code> + <code>MemorySwap</code> gleich, <code>NanoCpus</code>, <code>PidsLimit</code>, Log-Rotation, Disk-Quota.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Auth über <a href="https://better-auth.com">better-auth</a>: TypeScript-nativ, bringt E-Mail-Verifikation, Rollen und Rate-Limiting mit, was hier direkt gebraucht wird. Auth.js v5 ist die konservative Alternative, kostet aber mehr Eigenbau für den Admin-Teil.</p>
+    </section>
+
+    <!-- 11 -->
+    <section id="roadmap">
+      <h2>Roadmap</h2>
+      <p>Neun Phasen, jede endet mit etwas Vorführbarem. Die Reihenfolge ist nicht beliebig: P2 vor P3, weil das Panel ohne Docker-Schicht nichts zu zeigen hat, und P4 vor P5, weil ein Server erst erreichbar sein muss, bevor die Konsole interessant wird.</p>
+      <div class="phases">
+        <div class="phase">
+          <div class="pid">P0</div>
+          <div class="pbody">
+            <div class="ptitle">Fundament</div>
+            <div class="pdesc">Host nach dem Runbook eingerichtet (Ubuntu, ZFS-Pool, Docker, Agent-Konto). Dann Repo, Docker Compose mit Postgres/Redis/App, Prisma-Schema, better-auth mit Registrierung, E-Mail-Verifikation und Rollen.</div>
+            <div class="pout">Ergebnis: Registrieren, einloggen, leeres Dashboard.</div>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="pid">P1</div>
+          <div class="pbody">
+            <div class="ptitle">Admin-Templates</div>
+            <div class="pdesc">Plan-CRUD im Admin-Bereich (RAM, CPU, Disk, Spieler, Backups). <code>Node</code>-Eintrag mit Kapazität und Reserve. Ressourcen-Buchhaltung als eigene, testbare Funktion.</div>
+            <div class="pout">Ergebnis: Admin legt „Basic 2 GB" an, freie Kapazität ist sichtbar.</div>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="pid">P2</div>
+          <div class="pbody">
+            <div class="ptitle">Agent und Docker-Schicht</div>
+            <div class="pdesc">Der Agent als systemd-Unit auf dem Host: Token-Auth auf <code>127.0.0.1</code>, Endpunkte für create/start/stop/restart/remove/inspect, Speichertreiber für ZFS und ersatzweise einfache Verzeichnisse, RCON-Client, Snapshots. Noch ohne UI, getestet per HTTP-Client.</div>
+            <div class="pout">Ergebnis: Ein echter Minecraft-Server entsteht, wird steuerbar, gesichert, gestoppt und restlos entfernt — alles per API.</div>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="pid">P3</div>
+          <div class="pbody">
+            <div class="ptitle">Server-Lebenszyklus im Panel</div>
+            <div class="pdesc">Anlegen-Flow mit Plan- und Versionswahl, Zustandsmaschine, Start/Stopp/Neustart-Buttons, Status-Polling, Ready-Erkennung über das Log-Muster.</div>
+            <div class="pout">Ergebnis: Nutzer klickt „Server erstellen" und sieht ihn hochfahren.</div>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="pid">P4</div>
+          <div class="pbody">
+            <div class="ptitle">Erreichbarkeit</div>
+            <div class="pdesc">mc-router im Compose, Wildcard-DNS, Subdomain-Vergabe mit Validierung und Sperrliste, Routen-Registrierung im Provisioning und im Reconcile.</div>
+            <div class="pout">Ergebnis: Ein echter Client joint auf <code>name.mc.example.com</code>. Das ist der Moment, an dem es ein Produkt wird.</div>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="pid">P5</div>
+          <div class="pbody">
+            <div class="ptitle">Konsole und Live-Daten</div>
+            <div class="pdesc">SSE-Logstream mit Demultiplexing, RCON-Befehlszeile mit Rate-Limit und Audit, CPU-/RAM-Anzeige aus dem geteilten Stats-Poller, Spielerliste.</div>
+            <div class="pout">Ergebnis: Nutzer sieht die Konsole live und kann Befehle absetzen.</div>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="pid">P6</div>
+          <div class="pbody">
+            <div class="ptitle">Dateien, Mods, Einstellungen</div>
+            <div class="pdesc">Dateimanager mit Traversal-Schutz, Uploads nach <code>/mods</code> und <code>/plugins</code>, geführter <code>server.properties</code>-Editor, Wechsel von Version und Server-Typ über <code>server.recreate</code> — mit Warnung vor Rückstufungen.</div>
+            <div class="pout">Ergebnis: Nutzer installiert ein Plugin ohne SSH.</div>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="pid">P7</div>
+          <div class="pbody">
+            <div class="ptitle">Backups</div>
+            <div class="pdesc">ZFS-Snapshot mit <code>save-off</code>/<code>save-on</code>-Sequenz, Rotation nach Plan-Limit, Restore per <code>zfs rollback</code> als eigener Job, Download über <code>zfs send</code> mit ablaufender Signatur. Dazu der nächtliche <code>zfs send</code> auf den zweiten Pool.</div>
+            <div class="pout">Ergebnis: Welt kaputt, Welt zurückgeholt.</div>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="pid">P8</div>
+          <div class="pbody">
+            <div class="ptitle">Härtung und Abrechnung</div>
+            <div class="pdesc">Audit-Log-Ansicht, harte Disk-Quotas scharf schalten, Egress-Regeln, Suspend-Pfad, Monitoring. Danach Stripe Checkout an die vorbereitete <code>Subscription</code> andocken.</div>
+            <div class="pout">Ergebnis: Bezahlen möglich, Zahlungsausfall führt zu Suspend statt Löschung.</div>
+          </div>
+        </div>
+      </div>
+      <div class="callout">
+        <strong>P0 bis P4 sind das eigentliche Produkt.</strong>
+        <span>Danach existiert ein funktionierender Hoster: Registrierung, Templates, Server anlegen, spielen. Alles ab P5 macht ihn konkurrenzfähig, aber nichts davon blockiert einen ersten echten Test mit ein paar Freunden auf der Kiste.</span>
+      </div>
+    </section>
+
+    <!-- 12 -->
+    <section id="offen">
+      <h2>Offene Punkte</h2>
+      <p>Bewusst noch nicht entschieden. Die Frage nach dem Dateisystem ist inzwischen beantwortet — ZFS, siehe Host-Runbook — und aus dieser Liste heraus.</p>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Frage</th><th>Fällig</th><th>Anmerkung</th></tr></thead>
+          <tbody>
+            <tr><td>Hardware-Eckdaten: RAM, CPU, Pool-Größe</td><td><span class="chip crit">vor P1</span></td><td>Bestimmt ARC-Deckel, <code>node.reservedMemoryMb</code> und die sinnvollen Standard-Templates.</td></tr>
+            <tr><td>Domain und Wildcard-DNS</td><td>vor P4</td><td>Der Hoster muss Wildcard-A-Records erlauben.</td></tr>
+            <tr><td>E-Mail-Versand für Verifikation</td><td>vor dem ersten echten Nutzer</td><td>Resend, Postmark oder eigener SMTP. Für die lokale Entwicklung reicht zunächst Konsolen-Ausgabe.</td></tr>
+            <tr><td>Modpack-Unterstützung (CurseForge)</td><td>nach P6</td><td>Braucht einen API-Key; Modrinth ist offener und der bessere Startpunkt.</td></tr>
+            <tr><td>Bedrock-Clients via Geyser</td><td>offen</td><td>Läuft nicht über mc-router, braucht eigenen UDP-Pfad.</td></tr>
+            <tr><td>SFTP-Zugang pro Server</td><td>nach P6</td><td>Erwartetes Feature bei ernsthaften Nutzern, aber eigener Sicherheitskomplex.</td></tr>
+            <tr><td>Löschfrist und Datenaufbewahrung</td><td>vor P8</td><td>Karenzzeit nach Kündigung, DSGVO-Auskunft und -Löschung.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <div class="endnote">Bauplan · Minecraft-Server-SaaS · v1-Zielbild · 14.08.2026</div>
+
+</div>

@@ -1,0 +1,232 @@
+# Minecraft-Server SaaS
+
+Nutzer registrieren sich und bekommen einen eigenen Minecraft-Server als
+Docker-Container. Admins legen Tarife mit RAM-, CPU- und Speichergrenzen an.
+
+Die Planung liegt im Repo:
+
+- `PLAN.html` — Architektur, Datenmodell, Sicherheit, Roadmap P0–P8
+- `HOST-SETUP.html` — Runbook für den Linux-Host (Ubuntu, ZFS, Docker)
+
+## Stand
+
+**P0 — Fundament, abgeschlossen und gegen eine laufende Datenbank verifiziert.**
+Durchgespielt: Registrieren → Bestätigungsmail → Verifizieren → Anmelden →
+Dashboard. Dazu die Rollenprüfung (ein normaler Nutzer wird von `/admin` auf
+`/dashboard` umgeleitet), das Promote-Skript und die Kapazitätsanzeige.
+
+**P1 — Tarif-Verwaltung, abgeschlossen.** Anlegen, Bearbeiten und Löschen unter
+`/admin/plans`, mit Validierung, Audit-Protokoll und Kapazitätsbezug: Die Liste
+zeigt pro Tarif, wie oft er noch auf den Node passt. Löschen ist gesperrt,
+solange Server darauf laufen.
+
+**P2 — Node-Agent und Docker-Schicht, abgeschlossen.** Eigener Dienst unter
+`agent/`, lauscht nur auf `127.0.0.1` mit Bearer-Token. Legt Container an,
+startet, stoppt, sichert und entfernt sie. Gegen echtes Docker durchgespielt:
+Ein Paper-Server wird provisioniert, wird steuerbar, beantwortet RCON-Befehle,
+wird im laufenden Betrieb gesichert, sauber gestoppt und restlos entfernt.
+
+**P3 — Server-Lebenszyklus im Panel, abgeschlossen.** Nutzer legen unter
+`/servers/new` einen Server an: Name, Adresse, Tarif, Software, Version. Die
+Kapazität des Nodes und das Serverlimit des Tarifs werden vorher geprüft. Die
+Detailseite unter `/servers/:id` zeigt den Zustand, steuert Start/Stopp/Neustart
+und bietet eine RCON-Konsole. Löschen verlangt, dass der Servername abgetippt
+wird.
+
+Der Zustand kommt bei jedem Seitenaufruf frisch vom Agent und wird in die
+Datenbank zurückgeschrieben — die Spalte `status` ist Zwischenspeicher, nicht
+Wahrheit.
+
+**P4 — Erreichbarkeit, abgeschlossen.** mc-router läuft auf Port 25565 und
+leitet anhand des Hostnamens aus dem Minecraft-Handshake an den richtigen
+Container. Kein Server-Container veröffentlicht einen Port. Der Agent trägt
+Routen beim Anlegen ein, entfernt sie beim Löschen und gleicht sie bei jedem
+Start ab — der Router hält sie nur im Speicher.
+
+Die Detailseite prüft die Adresse so, wie ein Minecraft-Client es tut, und
+zeigt Spielerzahl, Version und MOTD.
+
+Offen ist nur noch der DNS-Eintrag: `*.mc.neuhauser.app` muss auf die
+öffentliche IP des Hosts zeigen. Bis dahin funktioniert die Adresse lokal,
+aber nicht aus dem Internet.
+
+**P5 — Konsole und Live-Daten, abgeschlossen.** Die Detailseite zeigt das
+Server-Log als fortlaufenden Stream und CPU- sowie Speicherauslastung als
+Balken. Beides über Server-Sent Events; der Browser spricht nie direkt mit dem
+Agent, sondern über einen Durchreicher im Panel, der vorher die
+Eigentümerschaft prüft.
+
+Docker bekommt genau einen Stats-Stream pro Container, egal wie viele Tabs
+offen sind. Bricht der Browser ab, endet auch der Stream beim Agent.
+
+**P6 — Dateimanager und Einstellungen, abgeschlossen.** Unter
+`/servers/:id/files` lassen sich Verzeichnisse durchgehen, Textdateien
+bearbeiten, Ordner anlegen und Dateien hochladen — Plugins nach `plugins/`,
+Mods nach `mods/`. Unter `/servers/:id/settings` gibt es einen geführten
+Editor für `server.properties`.
+
+Der Pfad-Schutz ist der kritische Teil und entsprechend abgesichert
+(`agent/paths.ts`, 18 Tests): `..` und absolute Pfade werden abgewiesen, und
+jeder Pfad wird vor der Prüfung über `realpath` aufgelöst — sonst könnte ein
+im Container angelegter Symlink aus dem Serververzeichnis herausführen.
+Gegen einen echten `ln -s / /data/raus` im laufenden Container getestet.
+
+`eula.txt` ist schreibgeschützt, und die RCON- und Port-Einstellungen in
+`server.properties` lassen sich nicht ändern — über sie steuert das Panel
+den Server.
+
+**P7 — Backups, abgeschlossen.** Unter `/servers/:id/backups` lassen sich
+Sicherungen anlegen, zurückspielen und löschen. Der Server bleibt beim
+Sichern erreichbar — er hält nur kurz das Schreiben an, damit die Welt
+vollständig auf der Platte liegt. Rotation nach `plan.maxBackups`: Ist das
+Limit erreicht, verdrängt die neue Sicherung die älteste.
+
+Zurückspielen stoppt den Server, spielt zurück und startet ihn wieder. Es
+verlangt, dass der Servername abgetippt wird — alles seit der Sicherung geht
+dabei verloren.
+
+**Wechsel von Version und Server-Software** liegt unter
+`/servers/:id/settings`. Der Container wird dabei ersetzt — Umgebungsvariablen
+und Speichergrenzen schreibt Docker beim Anlegen fest und lassen sich nicht
+nachträglich ändern. Welt, Plugins und Konfigurationsdateien liegen als
+Bind-Mount außerhalb und bleiben unangetastet.
+
+Rückstufungen und Software-Wechsel verlangen eine ausdrückliche Bestätigung
+und weisen auf ein fehlendes Backup hin: Minecraft wandelt die Welt beim
+Hochstufen um, und zurück führt kein unterstützter Weg.
+
+Noch nicht da: Abrechnung (P8).
+
+## Agent
+
+```bash
+pnpm agent        # lauscht auf 127.0.0.1:8787
+```
+
+Endpunkte (alle mit `Authorization: Bearer $AGENT_TOKEN`):
+
+| Methode | Pfad | Zweck |
+| --- | --- | --- |
+| GET | `/health` | Docker erreichbar, Speichertreiber, Netz |
+| GET | `/servers` | alle verwalteten Container |
+| POST | `/servers` | Speicher anlegen, Image ziehen, Container erstellen |
+| GET | `/servers/:id` | Zustand, Bereitschaft, Belegung |
+| POST | `/servers/:id/start` | starten und auf Steuerbarkeit warten |
+| POST | `/servers/:id/stop` | Welt sichern, dann `docker stop` |
+| POST | `/servers/:id/restart` | beides nacheinander |
+| DELETE | `/servers/:id` | Container und Daten entfernen |
+| POST | `/servers/:id/command` | RCON-Befehl absetzen |
+| POST | `/servers/:id/backup` | Snapshot im laufenden Betrieb |
+| GET | `/servers/:id/backups` | vorhandene Snapshots |
+| GET | `/tasks/:id` | Fortschritt langer Vorgänge |
+
+Lange Vorgänge liefern sofort einen Task zurück und laufen im Hintergrund;
+der Fortschritt kommt über `/tasks/:id`. Die Task-Liste liegt nur im
+Speicher — der wahre Zustand wird immer aus Docker gelesen.
+
+### Speichertreiber
+
+Auf dem Linux-Host mit ZFS-Pool: harte Quota pro Server, atomare Snapshots,
+Rollback in Sekunden. Ohne ZFS (Entwicklungs-Mac) fällt der Agent auf einfache
+Verzeichnisse zurück, warnt beim Start und meldet `hardQuota: false` — ein
+Server kann dort seine Grenze überschreiten.
+
+## Tests
+
+```bash
+pnpm test        # Kapazitätsrechnung und Tarif-Validierung, 25 Fälle
+pnpm typecheck
+pnpm build
+```
+
+## Voraussetzungen
+
+- Node 22 oder neuer
+- pnpm
+- Docker (für Postgres und Redis in der Entwicklung)
+
+## Einrichten
+
+```bash
+pnpm install
+
+cp .env.example .env
+# BETTER_AUTH_SECRET erzeugen und eintragen:
+openssl rand -base64 32
+
+# Postgres und Redis starten
+pnpm dev:services
+
+# Prisma-Client erzeugen und Schema in die Datenbank schreiben
+pnpm db:generate
+pnpm db:push
+
+# Node und Standard-Tarife anlegen
+pnpm db:seed
+
+pnpm dev
+```
+
+`pnpm db:generate` muss nach jedem Klon und nach jeder Schema-Änderung laufen —
+der erzeugte Client liegt unter `src/generated/` und ist nicht eingecheckt.
+
+Danach auf <http://localhost:3000> registrieren. Der Bestätigungslink wird
+**nicht** verschickt, sondern steht im Terminal, in dem `pnpm dev` läuft
+(`MAIL_TRANSPORT=console`).
+
+### Ersten Admin anlegen
+
+Erst registrieren und bestätigen, dann:
+
+```bash
+pnpm tsx scripts/promote-admin.ts du@example.com
+```
+
+Bewusst über die Shell und nicht über das Panel — sonst wäre die Admin-Rolle
+über die Anwendung selbst erreichbar.
+
+### Node-Werte
+
+Die Werte stehen in `.env` und beschreiben die Zielhardware:
+
+| Wert | Menge | Herleitung |
+| --- | --- | --- |
+| `NODE_TOTAL_MEMORY_MB` | 49152 | 48 GB verbaut |
+| `NODE_RESERVED_MEMORY_MB` | 12288 | 6 GB ZFS-ARC + 2 GB OS + 4 GB Postgres/Redis/App/Agent |
+| `NODE_TOTAL_CPU_CORES` | 12 | i5-12500, 6 Kerne / 12 Threads |
+| `NODE_TOTAL_DISK_MB` | 953000 | 1-TB-SSD als ZFS-Pool `tank` |
+| `NODE_RESERVED_DISK_MB` | 190000 | 20 % Reserve, ZFS soll nicht über 85 % gefüllt werden |
+
+Damit bleiben **36 GB für Server**, also neun Stück à 4 GB. RAM ist die
+bindende Grenze, nicht CPU und nicht Plattenplatz.
+
+## Aufbau
+
+```
+prisma/schema.prisma     Datenmodell (Auth, Plan, Node, Server, Backup, Audit)
+prisma/seed.ts           Node und Standard-Tarife
+scripts/promote-admin.ts Erste Admin-Rolle vergeben
+src/lib/auth.ts          better-auth, serverseitig
+src/lib/session.ts       requireUser / requireAdmin für Seiten
+src/lib/capacity.ts      Ressourcen-Buchhaltung, reine Funktionen
+src/lib/env.ts           Prüfung der Umgebungsvariablen beim Start
+src/app/(auth)/          Registrieren, Anmelden
+src/app/(app)/           Dashboard und Admin, hinter Anmeldung
+```
+
+## Hinweis zum Arbeitsverzeichnis
+
+Das Projekt liegt auf einer SMB-Freigabe. Daraus folgen zwei Dinge:
+
+**`pnpm install` dauert 10–20 Minuten.** pnpm kann nicht hardlinken, weil sein
+Store auf der lokalen Platte liegt und das Projekt auf der Freigabe. Jede Datei
+wird einzeln über das Netz kopiert.
+
+**`dev` und `build` laufen mit `--webpack` statt Turbopack.** Turbopacks
+persistenter Cache braucht `fsync`-Semantik, die SMB nicht anbietet — der Build
+bricht sonst mit `Operation not supported (os error 45)` ab. Der Flag steht
+bereits in den Skripten; wenn das Projekt einmal auf einer lokalen Platte oder
+auf dem Linux-Host liegt, kann er ersatzlos weg.
+
+Falls `pnpm dev` Änderungen nicht bemerkt, hilft ein Neustart des Dev-Servers —
+Dateiereignisse kommen über SMB nicht zuverlässig an.

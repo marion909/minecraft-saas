@@ -1,0 +1,318 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+  runtime  = "nodejs"
+}
+
+// Ab Prisma 7 steht die Verbindungs-URL nicht mehr hier, sondern in
+// prisma.config.ts (für Migrationen) bzw. als Treiber-Adapter am
+// PrismaClient (zur Laufzeit, siehe src/lib/db.ts).
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================================
+// Auth — Struktur von better-auth vorgegeben (Kernschema + admin-Plugin).
+// Änderungen hier immer gegen `pnpm dlx @better-auth/cli generate` abgleichen.
+// ============================================================================
+
+model User {
+  id            String   @id
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // admin-Plugin. Freitext statt Enum, weil das Plugin Strings erwartet;
+  // die gültigen Werte stehen in src/lib/roles.ts.
+  role       String    @default("user")
+  banned     Boolean   @default(false)
+  banReason  String?
+  banExpires DateTime?
+
+  sessions      Session[]
+  accounts      Account[]
+  servers       Server[]
+  subscriptions Subscription[]
+  auditLogs     AuditLog[]
+
+  @@index([role])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // admin-Plugin: gesetzt, wenn ein Admin diesen Nutzer gerade impersoniert.
+  impersonatedBy String?
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+// ============================================================================
+// Tarife — das, was der Admin als "Template" anlegt.
+// ============================================================================
+
+model Plan {
+  id   String @id @default(cuid())
+  name String @unique
+  slug String @unique
+
+  // Ressourcen pro Server
+  memoryMb   Int
+  cpuCores   Float
+  diskMb     Int
+  maxPlayers Int
+  maxBackups Int
+
+  // Wie viele Server ein Nutzer mit diesem Tarif gleichzeitig betreiben darf.
+  maxServers Int @default(1)
+
+  // Abrechnung: erst ab P8 relevant, Feld existiert vorher schon.
+  priceCents Int     @default(0)
+  isPublic   Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  servers       Server[]
+  subscriptions Subscription[]
+
+  @@map("plan")
+}
+
+model Subscription {
+  id     String             @id @default(cuid())
+  status SubscriptionStatus @default(ACTIVE)
+
+  currentPeriodEnd DateTime?
+  // Referenz beim Zahlungsanbieter, bleibt bis P8 leer.
+  externalId       String?   @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId String
+  plan   Plan   @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@map("subscription")
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+// ============================================================================
+// Nodes — in v1 genau eine Zeile. Die Abstraktion existiert von Anfang an,
+// damit ein zweiter Host später kein Umbau ist.
+// ============================================================================
+
+model Node {
+  id   String @id @default(cuid())
+  name String @unique
+
+  // Interne Adresse des Agents, z. B. http://127.0.0.1:8787
+  agentUrl   String
+  agentToken String
+  // Öffentlicher Hostname, unter dem die Server erreichbar sind.
+  publicHost String
+
+  totalMemoryMb Int
+  totalCpuCores Float
+  totalDiskMb   Int
+
+  // OS, ZFS-ARC, Postgres, Redis, App, Agent — wird von der Kapazität abgezogen.
+  reservedMemoryMb Int @default(4096)
+  reservedDiskMb   Int @default(0)
+
+  // Überbuchungsfaktor für CPU. RAM wird nie überbucht.
+  cpuOvercommit Float @default(2.0)
+
+  status    NodeStatus @default(ONLINE)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  servers Server[]
+
+  @@map("node")
+}
+
+enum NodeStatus {
+  ONLINE
+  DRAINING
+  OFFLINE
+}
+
+// ============================================================================
+// Server
+// ============================================================================
+
+model Server {
+  id   String @id @default(cuid())
+  name String
+
+  // Wird zu <subdomain>.<node.publicHost>, geroutet über mc-router.
+  subdomain String @unique
+
+  status     ServerStatus @default(PROVISIONING)
+  serverType ServerType   @default(PAPER)
+  mcVersion  String
+
+  containerId String?
+  // ZFS-Dataset, z. B. tank/mc/srv-abc123
+  dataset     String?
+  dataPath    String?
+
+  // Steuergeheimnis, verlässt den Server-Prozess nie.
+  rconPassword String
+
+  // Letzter beim Agent angestoßener Vorgang. Ohne den bliebe ein
+  // fehlgeschlagenes Anlegen für immer auf PROVISIONING stehen und würde
+  // Kapazität blockieren, die nie belegt wurde.
+  lastTaskId String?
+
+  // Tatsächlich am Container anliegende Werte. Weicht das vom Plan ab,
+  // zeigt das Panel "Plan geändert, Neustart nötig" — statt dass
+  // Buchhaltung und Realität auseinanderlaufen.
+  appliedMemoryMb Int
+  appliedCpuCores Float
+  appliedDiskMb   Int
+
+  lastError   String?
+  suspendedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  nodeId String
+  node   Node   @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  planId String
+  plan   Plan   @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  backups   Backup[]
+  auditLogs AuditLog[]
+
+  @@index([userId])
+  @@index([nodeId, status])
+  @@map("server")
+}
+
+enum ServerStatus {
+  PROVISIONING
+  STOPPED
+  STARTING
+  RUNNING
+  STOPPING
+  SUSPENDED
+  DELETING
+  FAILED
+}
+
+enum ServerType {
+  VANILLA
+  PAPER
+  PURPUR
+  FABRIC
+  FORGE
+}
+
+// ============================================================================
+// Backups — ZFS-Snapshots, kein Tar. Siehe Bauplan, Abschnitt 09.
+// ============================================================================
+
+model Backup {
+  id String @id @default(cuid())
+
+  // Voller Snapshot-Name, z. B. tank/mc/srv-abc123@2026-08-14T12-00-00
+  snapshotName String
+  sizeBytes    BigInt       @default(0)
+  status       BackupStatus @default(PENDING)
+  note         String?
+
+  createdAt DateTime @default(now())
+
+  serverId String
+  server   Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([serverId, createdAt])
+  @@map("backup")
+}
+
+enum BackupStatus {
+  PENDING
+  READY
+  FAILED
+}
+
+// ============================================================================
+// Audit
+// ============================================================================
+
+model AuditLog {
+  id     String @id @default(cuid())
+  action String
+  meta   Json?
+  ip     String?
+
+  createdAt DateTime @default(now())
+
+  userId   String?
+  user     User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  serverId String?
+  server   Server? @relation(fields: [serverId], references: [id], onDelete: SetNull)
+
+  @@index([serverId, createdAt])
+  @@index([userId, createdAt])
+  @@map("audit_log")
+}

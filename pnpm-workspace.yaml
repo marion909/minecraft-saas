@@ -1,0 +1,13 @@
+# pnpm 11 verlangt eine ausdrückliche Freigabe für Build-Skripte.
+allowBuilds:
+  # Toolchain — dürfen bauen.
+  '@prisma/engines': true
+  esbuild: true
+  prisma: true
+
+  # Transitive Abhängigkeiten von dockerode für dessen SSH-Transport.
+  # Der Agent spricht ausschließlich über den Unix-Socket mit Docker,
+  # diese nativen Builds werden also nie gebraucht.
+  cpu-features: false
+  protobufjs: false
+  ssh2: false
