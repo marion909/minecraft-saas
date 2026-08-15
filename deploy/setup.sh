@@ -749,22 +749,29 @@ init_database() {
 install_units() {
   step "systemd-Dienste einrichten"
 
-  # Ein- und Aushängen von ZFS-Datasets verlangt unter Linux Benutzer-ID 0:
-  # `zfs allow` deckt es nicht ab, CAP_SYS_ADMIN genügt ZFS auch nicht.
-  # Statt den ganzen Agent als root laufen zu lassen, bekommt genau dieses
-  # Skript root — es kennt drei Verben und prüft seine Argumente selbst.
+  # Zwei Dinge kann der Agent nicht selbst: ZFS-Datasets einhängen und den
+  # Host schalten. Beides verlangt Benutzer-ID 0 — `zfs allow` deckt das
+  # Einhängen nicht ab, CAP_SYS_ADMIN genügt ZFS auch nicht. Statt den
+  # ganzen Agent als root laufen zu lassen, bekommen genau diese zwei
+  # Skripte root. Sie kennen eine Handvoll Verben und prüfen ihre
+  # Argumente selbst.
+  local sudoers=/etc/sudoers.d/mc-agent
+  : > "$sudoers.neu"
+
   if [ "${SKIP_ZFS:-0}" != "1" ]; then
     install -m 0755 -o root -g root "$APP_DIR/deploy/mc-zfs-helper" /usr/local/sbin/mc-zfs-helper
-
-    local sudoers=/etc/sudoers.d/mc-agent
-    printf 'mcagent ALL=(root) NOPASSWD: /usr/local/sbin/mc-zfs-helper\n' > "$sudoers.neu"
-    chmod 0440 "$sudoers.neu"
-    # Erst prüfen, dann an Ort und Stelle: Eine kaputte Datei unter
-    # sudoers.d sperrt sudo für alle aus, auch für dich.
-    visudo -cf "$sudoers.neu" >/dev/null || { rm -f "$sudoers.neu"; die "sudoers-Regel ist ungültig."; }
-    mv "$sudoers.neu" "$sudoers"
-    ok "mc-zfs-helper installiert, sudo-Regel geprüft"
+    printf 'mcagent ALL=(root) NOPASSWD: /usr/local/sbin/mc-zfs-helper\n' >> "$sudoers.neu"
   fi
+
+  install -m 0755 -o root -g root "$APP_DIR/deploy/mc-host-helper" /usr/local/sbin/mc-host-helper
+  printf 'mcagent ALL=(root) NOPASSWD: /usr/local/sbin/mc-host-helper\n' >> "$sudoers.neu"
+
+  chmod 0440 "$sudoers.neu"
+  # Erst prüfen, dann an Ort und Stelle: Eine kaputte Datei unter
+  # sudoers.d sperrt sudo für alle aus, auch für dich.
+  visudo -cf "$sudoers.neu" >/dev/null || { rm -f "$sudoers.neu"; die "sudoers-Regel ist ungültig."; }
+  mv "$sudoers.neu" "$sudoers"
+  ok "Helfer installiert, sudo-Regeln geprüft"
 
   install -m 0644 "$APP_DIR/deploy/mc-agent.service" /etc/systemd/system/
   install -m 0644 "$APP_DIR/deploy/mc-panel.service" /etc/systemd/system/
@@ -805,6 +812,13 @@ verify() {
   # erste Nutzer einen Server anlegt.
   check "mcagent darf den ZFS-Helfer" \
     "[ '${SKIP_ZFS:-0}' = '1' ] || sudo -u mcagent sudo -n /usr/local/sbin/mc-zfs-helper 2>&1 | grep -q 'Unbekanntes Verb'"
+
+  # Fragt die Regel ab, ohne den Host zu schalten. Ohne diese Prüfung
+  # fiele eine fehlende Freigabe erst auf, wenn jemand im Panel auf
+  # "Neu starten" drückt — und dann steht der Vorgang mit halb
+  # gestoppten Servern da.
+  check "mcagent darf den Host-Helfer" \
+    "sudo -u mcagent sudo -n -l /usr/local/sbin/mc-host-helper"
 
   check "Caddy lauscht auf 80"  "ss -lnt | grep -qE ':80\b'"
   check "Caddy lauscht auf 443" "ss -lnt | grep -qE ':443\b'"

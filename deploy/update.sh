@@ -92,6 +92,26 @@ if touched '^deploy/mc-zfs-helper$'; then
   ok "mc-zfs-helper erneuert"
 fi
 
+# Bewusst ohne touched-Prüfung: Auf einer Installation von vor der
+# Host-Steuerung gibt es weder das Skript noch die sudo-Regel. Ein Update
+# darf die Funktion nicht halb ausgerollt liegen lassen — der Knopf im
+# Panel wäre da, das Recht dahinter nicht.
+install -m 0755 -o root -g root "$APP_DIR/deploy/mc-host-helper" /usr/local/sbin/mc-host-helper
+
+sudoers=/etc/sudoers.d/mc-agent
+if ! grep -qF '/usr/local/sbin/mc-host-helper' "$sudoers" 2>/dev/null; then
+  cp -a "$sudoers" "$sudoers.neu" 2>/dev/null || : > "$sudoers.neu"
+  printf 'mcagent ALL=(root) NOPASSWD: /usr/local/sbin/mc-host-helper\n' >> "$sudoers.neu"
+  chmod 0440 "$sudoers.neu"
+  # Eine kaputte Datei unter sudoers.d sperrt sudo für alle aus. Deshalb
+  # erst prüfen, dann verschieben — nie direkt hineinschreiben.
+  visudo -cf "$sudoers.neu" >/dev/null || { rm -f "$sudoers.neu"; die "sudoers-Regel ist ungültig."; }
+  mv "$sudoers.neu" "$sudoers"
+  ok "mc-host-helper installiert, sudo-Regel ergänzt"
+else
+  ok "mc-host-helper erneuert"
+fi
+
 if touched '^deploy/(docker-compose\.prod\.yml|Caddyfile)$'; then
   # --env-file, weil der Verweis deploy/.env erst seit einem bestimmten
   # Stand angelegt wird und hier nicht vorausgesetzt sein soll.

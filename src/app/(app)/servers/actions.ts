@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
 import { ServerStatus, ServerType } from "@/generated/prisma/enums";
 import { AgentClient, AgentError } from "@/lib/agent";
 import { audit } from "@/lib/audit";
-import { computeCapacity, fits } from "@/lib/capacity";
+import { placeServer } from "@/lib/capacity";
 import { db } from "@/lib/db";
 import { isAdmin } from "@/lib/roles";
 import { checkServerName } from "@/lib/server-name";
@@ -161,34 +161,44 @@ export async function createServer(
     };
   }
 
-  const node = await db.node.findFirst({
+  // Alle betriebsbereiten Nodes, nicht nur den ersten: Sonst wäre ein
+  // zweiter Node wirkungslos, sobald der erste voll ist. DRAINING und
+  // OFFLINE bleiben außen vor — genau dafür gibt es die Zustände.
+  const candidates = await db.node.findMany({
     where: { status: "ONLINE" },
-    include: { servers: true },
+    include: {
+      servers: {
+        select: {
+          appliedMemoryMb: true,
+          appliedCpuCores: true,
+          appliedDiskMb: true,
+        },
+      },
+    },
   });
-  if (!node) {
-    return { error: "Kein Node verfügbar. Bitte später erneut versuchen." };
-  }
 
-  const allocated = node.servers.reduce(
-    (sum, entry) => ({
-      memoryMb: sum.memoryMb + entry.appliedMemoryMb,
-      cpuCores: sum.cpuCores + entry.appliedCpuCores,
-      diskMb: sum.diskMb + entry.appliedDiskMb,
-    }),
-    { memoryMb: 0, cpuCores: 0, diskMb: 0 },
+  const placement = placeServer(
+    candidates.map((candidate) => ({
+      node: candidate,
+      allocated: candidate.servers.reduce(
+        (sum, entry) => ({
+          memoryMb: sum.memoryMb + entry.appliedMemoryMb,
+          cpuCores: sum.cpuCores + entry.appliedCpuCores,
+          diskMb: sum.diskMb + entry.appliedDiskMb,
+        }),
+        { memoryMb: 0, cpuCores: 0, diskMb: 0 },
+      ),
+    })),
+    { memoryMb: plan.memoryMb, cpuCores: plan.cpuCores, diskMb: plan.diskMb },
   );
 
-  const room = fits(computeCapacity(node, allocated), {
-    memoryMb: plan.memoryMb,
-    cpuCores: plan.cpuCores,
-    diskMb: plan.diskMb,
-  });
-
-  if (!room.ok) {
+  if (!placement.ok) {
     return {
-      error: `Auf dem Node ist gerade kein Platz für diesen Tarif. ${room.reason}`,
+      error: `Gerade ist kein Platz für diesen Tarif. ${placement.reason}`,
     };
   }
+
+  const node = placement.node;
 
   // Bleibt serverseitig — das Panel schickt Befehle, nie Zugangsdaten.
   const rconPassword = randomBytes(24).toString("base64url");

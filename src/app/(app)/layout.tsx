@@ -21,9 +21,23 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           </Link>
 
           {isAdmin(session.user.role) ? (
-            <Link className="navlink" href="/admin">
-              Admin
-            </Link>
+            <>
+              <Link className="navlink" href="/admin">
+                Admin
+              </Link>
+              {/*
+                Die drei Wege, die ein Admin täglich braucht — alles
+                andere (Tarife, Konten) liegt eine Ebene tiefer unter
+                /admin. Server und Host stehen hier, weil man sie im
+                Zweifel schnell braucht.
+              */}
+              <Link className="navlink" href="/admin/servers">
+                Alle Server
+              </Link>
+              <Link className="navlink" href="/admin/host">
+                Host
+              </Link>
+            </>
           ) : null}
 
           <SignOutButton />

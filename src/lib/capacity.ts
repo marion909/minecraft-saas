@@ -115,6 +115,54 @@ export function fits(capacity: Capacity, request: ResourceRequest): FitResult {
   return { ok: true };
 }
 
+export type Placement<T> =
+  | { ok: true; node: T; capacity: Capacity }
+  | { ok: false; reason: string };
+
+/**
+ * Welcher Node bekommt den neuen Server?
+ *
+ * Gewählt wird unter allen, auf die er passt, der mit dem meisten freien
+ * Arbeitsspeicher. Verteilen statt vollpacken: RAM ist die Größe, die
+ * zuerst ausgeht, und ein Node, der randvoll läuft, hat keine Luft mehr
+ * für den Neustart eines Servers mit größerem Tarif.
+ *
+ * Passt er nirgends, kommt die Begründung des aussichtsreichsten Nodes
+ * zurück — nicht die eines beliebigen. „Es fehlen 2 GB“ ist ein Satz,
+ * mit dem man etwas anfangen kann; „kein Platz“ ist keiner.
+ */
+export function placeServer<T extends NodeLimits>(
+  candidates: { node: T; allocated: Allocated }[],
+  request: ResourceRequest,
+): Placement<T> {
+  if (candidates.length === 0) {
+    return { ok: false, reason: "Es ist kein Node im Zustand ONLINE eingetragen." };
+  }
+
+  const bewertet = candidates
+    .map((candidate) => {
+      const capacity = computeCapacity(candidate.node, candidate.allocated);
+      return { ...candidate, capacity, fit: fits(capacity, request) };
+    })
+    .sort((a, b) => b.capacity.memoryMb.free - a.capacity.memoryMb.free);
+
+  const passend = bewertet.find((entry) => entry.fit.ok);
+
+  if (passend) {
+    return { ok: true, node: passend.node, capacity: passend.capacity };
+  }
+
+  const bester = bewertet[0]!;
+
+  return {
+    ok: false,
+    reason:
+      bester.fit.ok === false
+        ? bester.fit.reason
+        : "Auf keinem Node ist Platz.",
+  };
+}
+
 /**
  * Container-Limit und JVM-Heap dürfen nicht identisch sein: die JVM braucht
  * zusätzlich Metaspace, Thread-Stacks, Direct Buffers und GC-Strukturen.

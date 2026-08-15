@@ -929,3 +929,68 @@ tbody th[scope="row"] {
   color: var(--crit);
   padding-left: 0.7rem;
 }
+
+/* ---------- Kennzahlen (Host-Zustand) ---------- */
+
+.kennzahlen {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.9rem 1.5rem;
+  margin: 1rem 0;
+}
+
+.kennzahl {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.kennzahl-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.kennzahl-wert {
+  font-size: 0.95rem;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
+/* ---------- Verwaltungs-Startseite ---------- */
+
+.bereiche {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+}
+
+.bereiche .card {
+  margin: 0;
+}
+
+/* ---------- Filterleiste über Tabellen ---------- */
+
+.filterbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.filterbar .field {
+  margin: 0;
+  min-width: 12rem;
+}
+
+.filterbar .field:first-child {
+  flex: 1 1 20rem;
+}
+
+.filterbar .actions {
+  margin: 0;
+}

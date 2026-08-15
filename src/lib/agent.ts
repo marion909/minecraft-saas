@@ -42,6 +42,22 @@ export type AgentTask = {
   finishedAt: string | null;
 };
 
+/** Antwort von GET /host — der Zustand des Linux-Hosts hinter dem Agent. */
+export type AgentHostInfo = {
+  hostname: string;
+  kernel: string;
+  uptimeSeconds: number;
+  cpuCount: number;
+  loadAverage: [number, number, number];
+  memory: { totalMb: number; availableMb: number; source: "meminfo" | "os" };
+  disk: { path: string; totalMb: number; freeMb: number } | null;
+  rebootRequired: { required: boolean; packages: string[] };
+  canPower: boolean;
+  powerError: string | null;
+  containers: { total: number; running: number };
+  busy: { id: string; kind: string; serverId: string | null }[];
+};
+
 export type CreateServerInput = {
   serverId: string;
   subdomain: string;
@@ -77,10 +93,21 @@ export class AgentClient {
     return new AgentClient(node.agentUrl, node.agentToken);
   }
 
+  /**
+   * Zeitgrenze für jede Anfrage.
+   *
+   * Ein Node mit gefiltertem Port antwortet nicht mit einem Fehler, er
+   * antwortet gar nicht — ohne Grenze bliebe die Seite hängen, bis der
+   * Browser aufgibt. Alle Endpunkte hier antworten sofort; was länger
+   * dauert, läuft beim Agent als Vorgang und wird nachgefragt.
+   */
+  static readonly TIMEOUT_MS = 30_000;
+
   async #request<T>(
     method: string,
     path: string,
     body?: unknown,
+    timeoutMs: number = AgentClient.TIMEOUT_MS,
   ): Promise<T> {
     let response: Response;
 
@@ -93,8 +120,20 @@ export class AgentClient {
         },
         body: body ? JSON.stringify(body) : undefined,
         cache: "no-store",
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
+      // Zeitüberschreitung und abgewiesene Verbindung getrennt melden:
+      // Das eine heißt "Dienst läuft nicht", das andere meist "Firewall
+      // verschluckt die Pakete" — und das sind zwei verschiedene Abende.
+      if (error instanceof DOMException && error.name === "TimeoutError") {
+        throw new AgentError(
+          504,
+          `Node-Agent antwortet nicht innerhalb von ${Math.round(timeoutMs / 1000)} s ` +
+            `(${this.baseUrl}). Erreichbar, aber stumm — meist eine Firewall dazwischen.`,
+        );
+      }
+
       // Der Agent ist ein eigener Prozess; ist er aus, muss das Panel das
       // als solches melden und nicht als Serverfehler des Nutzers.
       throw new AgentError(
@@ -115,12 +154,41 @@ export class AgentClient {
     return payload as T;
   }
 
+  /**
+   * Kurze Grenze: Diese Abfrage steht in Übersichten, oft mehrfach
+   * nebeneinander. Ein toter Node darf die Seite nicht aufhalten.
+   */
   health() {
     return this.#request<{
       ok: boolean;
+      docker: { ok: boolean; error: string | null };
       storage: { kind: "zfs" | "directory"; hardQuota: boolean };
       network: string;
-    }>("GET", "/health");
+      image?: string;
+    }>("GET", "/health", undefined, 6000);
+  }
+
+  // --- Der Host ---------------------------------------------------------
+
+  hostInfo() {
+    return this.#request<AgentHostInfo>("GET", "/host", undefined, 8000);
+  }
+
+  /**
+   * Schaltet den Host — nachdem der Agent die genannten Server sauber
+   * angehalten hat. Die RCON-Passwörter gehen deshalb mit: Nur die
+   * Datenbank kennt sie, und ohne sie kann der Agent keine Welt
+   * speichern lassen.
+   */
+  power(
+    mode: "reboot" | "poweroff",
+    servers: { serverId: string; rconPassword: string }[],
+  ) {
+    return this.#request<{ task: AgentTask; servers: number }>(
+      "POST",
+      "/host/power",
+      { mode, servers },
+    );
   }
 
   getServer(serverId: string) {

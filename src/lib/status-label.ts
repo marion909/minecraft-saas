@@ -29,6 +29,30 @@ export const STATUS_TONE: Record<ServerStatus, StatusTone> = {
   [ServerStatus.FAILED]: "bad",
 };
 
+/**
+ * Megabyte lesbar machen. Die Ressourcenfelder rechnen durchweg in MB,
+ * aber „900000 MB“ liest niemand als 900 GB.
+ */
+export function formatMb(mb: number): string {
+  if (mb < 1024) return `${Math.round(mb)} MB`;
+  if (mb < 1024 * 1024) {
+    const gb = mb / 1024;
+    return `${gb.toFixed(gb >= 100 ? 0 : 1)} GB`;
+  }
+  return `${(mb / 1024 / 1024).toFixed(1)} TB`;
+}
+
+/** Laufzeit als „3 Tage, 4 Std.“ — Sekunden interessieren hier niemanden. */
+export function formatUptime(seconds: number): string {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+
+  if (days > 0) return `${days} ${days === 1 ? "Tag" : "Tage"}, ${hours} Std.`;
+  if (hours > 0) return `${hours} Std., ${minutes} Min.`;
+  return `${minutes} Min.`;
+}
+
 export function formatBytes(bytes: number | null): string {
   if (bytes === null) return "—";
   if (bytes < 1024) return `${bytes} B`;

@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ServerStatus } from "@/generated/prisma/enums";
 import { BackupPanel, type BackupEntry } from "@/components/backup-panel";
 import { AgentClient } from "@/lib/agent";
+import { ForeignServerNotice } from "@/components/foreign-server-notice";
 import { db } from "@/lib/db";
 import { isAdmin } from "@/lib/roles";
 import { requireUser } from "@/lib/session";
@@ -26,7 +27,11 @@ export default async function BackupsPage({
 
   const server = await db.server.findUnique({
     where: { id },
-    include: { node: true, plan: true },
+    include: {
+      node: true,
+      plan: true,
+      user: { select: { id: true, name: true, email: true } },
+    },
   });
 
   if (
@@ -70,6 +75,10 @@ export default async function BackupsPage({
           Zurück zum Server
         </Link>
       </div>
+
+      {server.userId !== session.user.id ? (
+        <ForeignServerNotice owner={server.user} />
+      ) : null}
 
       {!listing ? (
         <p className="notice notice-error">

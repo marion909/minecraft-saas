@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { ServerStatus } from "@/generated/prisma/enums";
 import { DeleteServerForm } from "@/components/delete-server-form";
+import { ForeignServerNotice } from "@/components/foreign-server-notice";
 import { ServerConsole } from "@/components/server-console";
 import { ServerControls } from "@/components/server-controls";
 import { ServerLog } from "@/components/server-log";
@@ -24,7 +25,11 @@ export default async function ServerPage({
 
   const server = await db.server.findUnique({
     where: { id },
-    include: { node: true, plan: true },
+    include: {
+      node: true,
+      plan: true,
+      user: { select: { id: true, name: true, email: true } },
+    },
   });
 
   // Fremde Server verhalten sich wie nicht vorhandene — die ID in der URL
@@ -70,6 +75,10 @@ export default async function ServerPage({
           Backups
         </Link>
       </nav>
+
+      {server.userId !== session.user.id ? (
+        <ForeignServerNotice owner={server.user} />
+      ) : null}
 
       {!live.agentReachable ? (
         <p className="notice notice-warn">

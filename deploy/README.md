@@ -29,8 +29,25 @@ Downloads.
 | 13 | Prisma-Client, Panel bauen |
 | 14 | Postgres, Redis, mc-router, Caddy starten |
 | 15 | Schema schreiben, Node und Standardtarife anlegen |
-| 16 | systemd-Dienste `mc-agent` und `mc-panel` |
+| 16 | Helfer nach `/usr/local/sbin`, sudo-Regeln, systemd-Dienste `mc-agent` und `mc-panel` |
 | 17 | Abnahme, inklusive Prüfung auf ungewollt offene Container-Ports |
+
+### Die beiden Helfer
+
+Zwei Dinge kann der Agent nicht selbst, weil sie Benutzer-ID 0 verlangen:
+ZFS-Datasets einhängen und den Host schalten. Statt den ganzen Dienst zu
+erheben, bekommen zwei kleine Skripte root über je eine sudo-Regel:
+
+| Skript | Verben | Grenzen |
+| --- | --- | --- |
+| `mc-zfs-helper` | `mount`, `destroy`, `rollback` | nur Datasets unter `…/mc/srv-`, keine Sonderzeichen, Einhängepunkt muss unter `/srv/mc` liegen |
+| `mc-host-helper` | `reboot`, `poweroff` | genau ein Argument, sonst nichts |
+
+Die Regeln landen in `/etc/sudoers.d/mc-agent` und werden vor dem
+Verschieben mit `visudo -cf` geprüft — eine kaputte Datei dort sperrt sudo
+für alle aus, auch für dich. Die Abnahme in Schritt 17 fragt beide Rechte
+ab; beim Host-Helfer über `sudo -n -l`, das die Regel prüft, ohne den
+Rechner neu zu starten.
 
 ## Der eine gefährliche Schritt
 
@@ -120,8 +137,15 @@ Es sieht nach, was sich geändert hat, und macht nur das Nötige:
 | `agent/…` | `mc-agent` wird neu gestartet |
 | `deploy/*.service` | Units erneuert, `daemon-reload` |
 | `deploy/Caddyfile`, Compose | Container abgeglichen |
+| `deploy/mc-zfs-helper` | Helfer erneuert |
 
 Hat sich nichts geändert, bricht es sofort ab, statt sinnlos zu bauen.
+
+Eine Ausnahme von dieser Regel ist `mc-host-helper`: Der wird bei jedem
+Lauf installiert, und die sudo-Regel wird ergänzt, falls sie fehlt. Auf
+einer Installation von vor der Host-Steuerung gibt es beides noch nicht —
+und eine halb ausgerollte Funktion, bei der der Knopf im Panel da ist und
+das Recht dahinter nicht, ist schlimmer als gar keine.
 
 Wenn sich am **Host** etwas ändern soll — neue Pakete, andere
 Kernel-Werte, ein zweiter Pool —, dann `setup.sh`:

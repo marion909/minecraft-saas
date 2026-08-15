@@ -4,6 +4,7 @@ import http from "node:http";
 import { loadConfig, type AgentConfig } from "./config.ts";
 import { DockerLayer } from "./docker.ts";
 import * as files from "./files.ts";
+import { collectHostInfo, powerHost } from "./host.ts";
 import {
   bearerToken,
   HttpError,
@@ -129,6 +130,16 @@ export function createAgent(config: AgentConfig) {
 
   /** Verhindert, dass zwei Vorgänge gleichzeitig denselben Server anfassen. */
   function assertIdle(serverId: string) {
+    // Fährt der Host gerade herunter, ist jeder neue Vorgang sinnlos und
+    // gefährlich: Ein Server, der jetzt noch startet, wird gleich mitten
+    // im Weltladen von systemd abgeräumt.
+    if (tasks.running().some((task) => task.kind === "host.power")) {
+      throw new HttpError(
+        409,
+        "Der Host wird gerade geschaltet — bis dahin keine neuen Vorgänge.",
+      );
+    }
+
     const running = tasks.runningFor(serverId);
     if (running) {
       throw new HttpError(
@@ -822,6 +833,127 @@ export function createAgent(config: AgentConfig) {
       // Minecraft liest die Datei nur beim Start.
       restartRequired: result.changed.length > 0,
     };
+  });
+
+  // ---------------------------------------------------------------------
+  // Der Host selbst
+  // ---------------------------------------------------------------------
+
+  router.get("/host", async () => {
+    const [info, containers] = await Promise.all([
+      collectHostInfo(config.storage.mountRoot),
+      docker.listManaged().catch(() => []),
+    ]);
+
+    return {
+      ...info,
+      containers: {
+        total: containers.length,
+        running: containers.filter((entry) => entry.state === "running").length,
+      },
+      busy: tasks.running().map((task) => ({
+        id: task.id,
+        kind: task.kind,
+        serverId: task.serverId,
+      })),
+    };
+  });
+
+  /**
+   * Neustarten oder ausschalten — mit sauber angehaltenen Servern.
+   *
+   * Der Umweg über diesen Endpunkt statt eines blanken `reboot` ist der
+   * ganze Zweck: Beim Herunterfahren gibt systemd dem Docker-Daemon
+   * wenige Sekunden, und der reicht sie an die Container weiter. Ein
+   * Minecraft-Server braucht zum Speichern seiner Welt deutlich länger.
+   * Wer ohne dieses Anhalten neu startet, würfelt bei jedem Server, ob
+   * die Welt beschädigt zurückkommt.
+   *
+   * Die RCON-Passwörter kommen mit der Anfrage, weil nur das Panel sie
+   * kennt. Der Agent hält sie nirgends vor.
+   */
+  router.post("/host/power", async ({ body }) => {
+    const mode = field(body, "mode");
+
+    if (mode !== "reboot" && mode !== "poweroff") {
+      throw new HttpError(400, `Unbekannter Modus "${mode}".`);
+    }
+
+    const busy = tasks.running();
+    if (busy.length > 0) {
+      throw new HttpError(
+        409,
+        `Es laufen noch ${busy.length} Vorgänge (${busy
+          .map((task) => task.kind)
+          .join(", ")}). Erst abwarten — ein Neustart mitten in einem ` +
+          `Backup lässt den Server im save-off-Zustand zurück.`,
+      );
+    }
+
+    const raw = (body as { servers?: unknown })?.servers;
+    if (!Array.isArray(raw)) {
+      throw new HttpError(400, 'Feld "servers" fehlt.');
+    }
+
+    const servers = raw.map((entry) => {
+      const item = entry as { serverId?: unknown; rconPassword?: unknown };
+
+      if (
+        typeof item.serverId !== "string" ||
+        typeof item.rconPassword !== "string" ||
+        item.rconPassword.length === 0
+      ) {
+        throw new HttpError(400, "Jeder Eintrag braucht serverId und rconPassword.");
+      }
+
+      return {
+        serverId: assertServerId(item.serverId),
+        rconPassword: item.rconPassword,
+      };
+    });
+
+    const task = tasks.start("host.power", null, async (report) => {
+      let stopped = 0;
+
+      for (const entry of servers) {
+        const state = await docker.inspect(entry.serverId).catch(() => null);
+
+        if (!state || !state.containerRunning) continue;
+
+        report(`Server anhalten: ${entry.serverId}`);
+
+        try {
+          const result = await docker.stop(entry.serverId, entry.rconPassword);
+          stopped += 1;
+          report(
+            result.saved
+              ? `${entry.serverId}: Welt gespeichert, gestoppt über ${result.method}`
+              : `${entry.serverId}: WARNUNG — Speichern fehlgeschlagen (${result.saveError ?? "unbekannt"})`,
+          );
+        } catch (error) {
+          // Kein Abbruch: Ein Server, der sich nicht anhalten lässt,
+          // wird durch das Weiterlaufen des Hosts nicht heiler. Aber es
+          // gehört ins Protokoll, damit hinterher klar ist, welche Welt
+          // hart beendet wurde.
+          report(
+            `${entry.serverId}: FEHLER beim Anhalten — ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
+
+      report(`${stopped} Server angehalten, ${servers.length} geprüft`);
+      report(mode === "reboot" ? "Host startet neu" : "Host schaltet ab");
+
+      // Etwas Luft, damit dieser Fortschritt noch abgeholt werden kann,
+      // bevor systemd den Agent beendet.
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      await powerHost(mode);
+    });
+
+    return { task, servers: servers.length };
   });
 
   router.get("/routes", async () => {

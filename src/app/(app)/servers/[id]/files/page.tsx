@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { FileActions } from "@/components/file-actions";
 import { FileEditor } from "@/components/file-editor";
 import { AgentClient } from "@/lib/agent";
+import { ForeignServerNotice } from "@/components/foreign-server-notice";
 import { db } from "@/lib/db";
 import { isAdmin } from "@/lib/roles";
 import { requireUser } from "@/lib/session";
@@ -34,7 +35,10 @@ export default async function FilesPage({
 
   const server = await db.server.findUnique({
     where: { id },
-    include: { node: true },
+    include: {
+      node: true,
+      user: { select: { id: true, name: true, email: true } },
+    },
   });
 
   if (
@@ -65,6 +69,10 @@ export default async function FilesPage({
             Zurück
           </Link>
         </div>
+
+        {server.userId !== session.user.id ? (
+          <ForeignServerNotice owner={server.user} />
+        ) : null}
 
         {!content ? (
           <p className="notice notice-error">Datei konnte nicht gelesen werden.</p>
@@ -101,6 +109,10 @@ export default async function FilesPage({
           Zurück zum Server
         </Link>
       </div>
+
+      {server.userId !== session.user.id ? (
+        <ForeignServerNotice owner={server.user} />
+      ) : null}
 
       <nav className="crumbs" aria-label="Pfad">
         {crumbsFor(path).map((crumb, index, all) => (

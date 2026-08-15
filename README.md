@@ -117,6 +117,46 @@ Beim Anlegen eines Servers werden Name und Adresse **während des Tippens**
 geprüft, nicht erst beim Abschicken. Namen sind je Nutzer eindeutig, ohne
 Rücksicht auf Groß-/Kleinschreibung.
 
+**Node-Verwaltung.** Unter `/admin/nodes` lassen sich Hosts anlegen,
+bearbeiten und entfernen: Adresse und Token des Agents, öffentlicher
+Hostname, Gesamtressourcen und der reservierte Anteil. Ein Knopf prüft die
+Verbindung, bevor gespeichert wird — sonst fiele ein Tippfehler im Token
+erst dem ersten Nutzer auf, und zwar als Fehler, der nach seinem aussieht.
+
+Die Zustände sind der eigentliche Nutzen: **DRAINING** nimmt keine neuen
+Server mehr an, während die vorhandenen weiterlaufen — der Zustand vor
+einer Wartung. Das Verkleinern der Kapazität unter das bereits Vergebene
+wird abgelehnt; das ist fast immer ein Tippfehler, und durchgelassen fiele
+er erst beim OOM-Kill auf.
+
+Dazu die Verteilung: Ein neuer Server geht auf den ONLINE-Node mit dem
+**meisten freien Arbeitsspeicher**, nicht auf den ersten. Vorher wurde nur
+der erste betrachtet — ein zweiter Node wäre damit wirkungslos gewesen,
+sobald der erste voll ist.
+
+**Alle Server.** `/admin/servers` listet die Server sämtlicher Konten mit
+Besitzer, Zustand, Tarif, Node und Belegung, durchsuchbar nach Name,
+Adresse und E-Mail. Von dort führt der Weg in dieselbe Ansicht, die auch
+der Besitzer sieht. Auf fremden Servern steht dann ein Hinweis, wem er
+gehört — auf allen vier Unterseiten, denn Konsole, Dateimanager und
+Löschknopf sehen dort genauso aus wie auf den eigenen.
+
+**Host-Steuerung.** `/admin/host` zeigt Laufzeit, Last, Speicher, Platte
+und Container-Zahl jedes Hosts — und ob ein Neustart aussteht, was Ubuntu
+nach einem Kernel-Update selbst vermerkt.
+
+Neu starten und Herunterfahren laufen von dort aus über den Agent, und der
+hält **erst jeder Welt an**, bevor er schaltet. Das ist der ganze Grund für
+diesen Umweg: Beim Herunterfahren gibt systemd dem Docker-Daemon Sekunden,
+und der reicht sie an die Container weiter. Ein Minecraft-Server braucht
+zum Speichern länger. Wer stattdessen `reboot` tippt, würfelt bei jedem
+Server, ob die Welt beschädigt zurückkommt. Läuft noch ein Backup, lehnt
+der Agent ab — ein unterbrochenes Backup lässt den Server im Zustand
+`save-off` zurück.
+
+Als Sicherung dient der abgetippte Node-Name, kein Bestätigungsdialog: Ein
+„Wirklich?“ klickt man weg, ohne es zu lesen.
+
 Noch nicht da: Abrechnung (P8).
 
 ## Agent
@@ -140,6 +180,8 @@ Endpunkte (alle mit `Authorization: Bearer $AGENT_TOKEN`):
 | POST | `/servers/:id/command` | RCON-Befehl absetzen |
 | POST | `/servers/:id/backup` | Snapshot im laufenden Betrieb |
 | GET | `/servers/:id/backups` | vorhandene Snapshots |
+| GET | `/host` | Laufzeit, Last, Speicher, Platte, ausstehender Neustart |
+| POST | `/host/power` | Server anhalten, dann neu starten oder abschalten |
 | GET | `/tasks/:id` | Fortschritt langer Vorgänge |
 
 Lange Vorgänge liefern sofort einen Task zurück und laufen im Hintergrund;
@@ -165,10 +207,24 @@ Zum Anlegen selbst braucht das Dienstkonto trotzdem `CAP_SYS_ADMIN`: ZFS
 verlangt für `create` die mount-Fähigkeit als Voraussetzung, auch wenn das
 Einhängen danach separat scheitert.
 
+### Den Host schalten
+
+Dasselbe Muster noch einmal: `deploy/mc-host-helper` kennt genau zwei
+Wörter, `reboot` und `poweroff`, nimmt kein zweites Argument an und läuft
+über eine eigene sudo-Regel. Keine Zeitangabe, keine Nachricht, nichts
+Freies — was dort nicht vorgesehen ist, geht nicht.
+
+Ob der Agent den Host überhaupt schalten darf, wird gemessen statt
+angenommen: `sudo -n -l` fragt die Regel ab, ohne sie auszuführen. Fehlt
+sie, erscheint im Panel kein Knopf, sondern der Grund.
+
+Die RCON-Passwörter für das Anhalten kommen mit der Anfrage vom Panel —
+nur die Datenbank kennt sie, und der Helfer bekommt sie nie zu sehen.
+
 ## Tests
 
 ```bash
-pnpm test        # 143 Fälle: Kapazität, Pfad-Schutz, Validierung, Protokoll-Streams
+pnpm test        # 177 Fälle: Kapazität, Node-Wahl, Pfad-Schutz, Validierung, Streams
 pnpm typecheck
 pnpm build
 ```
@@ -292,13 +348,17 @@ scripts/create-admin.ts  Erstes Konto anlegen (das Panel kann es nicht)
 scripts/promote-admin.ts Bestehendes Konto hochstufen
 src/lib/auth.ts          better-auth, serverseitig
 src/lib/session.ts       requireUser / requireAdmin für Seiten
-src/lib/capacity.ts      Ressourcen-Buchhaltung, reine Funktionen
+src/lib/capacity.ts      Ressourcen-Buchhaltung und Node-Wahl, reine Funktionen
 src/lib/env.ts           Prüfung der Umgebungsvariablen beim Start
 src/app/(auth)/          Anmelden
 src/app/(app)/           Dashboard und Admin, hinter Anmeldung
+src/app/(app)/admin/     Server aller Konten, Konten, Tarife, Nodes, Host
 agent/                   Node-Agent: Docker, ZFS, RCON, Routing
 agent/paths.ts           Pfad-Schutz des Dateimanagers, 18 Tests
+agent/host.ts            Zustand des Hosts, Neustart über den Helfer
 deploy/                  setup.sh, update.sh, Units, Compose, Caddyfile
+deploy/mc-zfs-helper     Die ZFS-Schritte, die root verlangen
+deploy/mc-host-helper    reboot und poweroff, sonst nichts
 ```
 
 ## Hinweis zum Arbeitsverzeichnis

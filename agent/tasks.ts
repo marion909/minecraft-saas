@@ -91,6 +91,16 @@ export class TaskRegistry {
     );
   }
 
+  /**
+   * Alles, was gerade läuft — über alle Server hinweg. Gebraucht wird das
+   * vor dem Schalten des Hosts: Ein Neustart mitten in einem Backup lässt
+   * einen Server im save-off-Zustand zurück, und der verliert dann beim
+   * nächsten Absturz alles seit dem letzten Snapshot.
+   */
+  running(): Task[] {
+    return this.list().filter((task) => task.status === "running");
+  }
+
   #prune(): void {
     while (this.#order.length > this.keep) {
       const oldest = this.#order.shift();

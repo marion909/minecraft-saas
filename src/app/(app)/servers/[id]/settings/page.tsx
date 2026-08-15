@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { PropertiesForm } from "@/components/properties-form";
 import { VersionForm } from "@/components/version-form";
 import { AgentClient } from "@/lib/agent";
+import { ForeignServerNotice } from "@/components/foreign-server-notice";
 import { db } from "@/lib/db";
 import { isAdmin } from "@/lib/roles";
 import { requireUser } from "@/lib/session";
@@ -18,7 +19,10 @@ export default async function SettingsPage({
 
   const server = await db.server.findUnique({
     where: { id },
-    include: { node: true },
+    include: {
+      node: true,
+      user: { select: { id: true, name: true, email: true } },
+    },
   });
 
   if (
@@ -46,6 +50,10 @@ export default async function SettingsPage({
           Zurück
         </Link>
       </div>
+
+      {server.userId !== session.user.id ? (
+        <ForeignServerNotice owner={server.user} />
+      ) : null}
 
       {!properties ? (
         <p className="notice notice-warn">

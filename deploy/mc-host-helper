@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+#
+# Den Host neu starten oder ausschalten.
+#
+# Dasselbe Muster wie bei mc-zfs-helper: Statt dem Agent Rechte zu geben,
+# mit denen er alles könnte, bekommt genau dieses Skript root über eine
+# sudo-Regel. Es nimmt zwei Wörter entgegen und sonst nichts — keine
+# Zeitangabe, keine Nachricht, keine freien Argumente. Was hier nicht
+# vorgesehen ist, geht nicht.
+#
+#   mc-host-helper reboot
+#   mc-host-helper poweroff
+#
+# Ausdrücklich NICHT die Aufgabe dieses Skripts: die Minecraft-Server
+# vorher sauber anzuhalten. Das erledigt der Agent, bevor er hier
+# landet — er kennt die RCON-Passwörter, dieses Skript nicht und soll
+# sie auch nie sehen. Wer es von Hand aufruft, hat die Server also
+# selbst zu stoppen, sonst reißt Docker sie beim Herunterfahren nach
+# 15 Sekunden mitten aus dem Weltspeichern.
+#
+set -euo pipefail
+
+verb="${1:-}"
+
+# Genau ein Argument. Ein zweites deutet auf einen Aufrufer hin, der etwas
+# anderes vorhat als das, wofür diese sudo-Regel gedacht ist.
+if [ "$#" -ne 1 ]; then
+  printf 'Genau ein Argument erwartet: reboot oder poweroff.\n' >&2
+  exit 1
+fi
+
+case "$verb" in
+  reboot|poweroff) ;;
+  *)
+    printf 'Unbekanntes Verb "%s". Erlaubt: reboot, poweroff.\n' "$verb" >&2
+    exit 1
+    ;;
+esac
+
+logger -t mc-host-helper "Host-${verb} angefordert (uid=${SUDO_UID:-?} user=${SUDO_USER:-?})" || true
+
+if command -v systemctl >/dev/null 2>&1; then
+  # systemctl kehrt normalerweise nicht zurück — der Aufrufer wird beim
+  # Herunterfahren selbst beendet.
+  exec systemctl "$verb"
+fi
+
+# Ohne systemd (Container, WSL) der klassische Weg.
+case "$verb" in
+  reboot)   exec shutdown -r now ;;
+  poweroff) exec shutdown -h now ;;
+esac
