@@ -1,7 +1,11 @@
 # Minecraft-Server SaaS
 
-Nutzer registrieren sich und bekommen einen eigenen Minecraft-Server als
-Docker-Container. Admins legen Tarife mit RAM-, CPU- und Speichergrenzen an.
+Ein Admin legt Konten an, jedes Konto bekommt einen eigenen Minecraft-Server
+als Docker-Container. Tarife bestimmen RAM-, CPU- und Speichergrenzen; ZFS
+setzt sie als harte Quota durch.
+
+**Läuft.** Panel unter `panel.neuhauser.app`, Server unter
+`<name>.mc.neuhauser.app`, beides aus dem Internet erreichbar.
 
 Die Planung liegt im Repo:
 
@@ -12,9 +16,11 @@ Die Planung liegt im Repo:
 ## Stand
 
 **P0 — Fundament, abgeschlossen und gegen eine laufende Datenbank verifiziert.**
-Durchgespielt: Registrieren → Bestätigungsmail → Verifizieren → Anmelden →
-Dashboard. Dazu die Rollenprüfung (ein normaler Nutzer wird von `/admin` auf
-`/dashboard` umgeleitet), das Promote-Skript und die Kapazitätsanzeige.
+Durchgespielt: Konto → Anmelden → Dashboard, dazu die Rollenprüfung (ein
+normaler Nutzer wird von `/admin` auf `/dashboard` umgeleitet), die
+Shell-Skripte für die Admin-Rolle und die Kapazitätsanzeige. Der damals
+enthaltene Weg über Registrierung und Bestätigungsmail ist inzwischen
+abgeschaltet, siehe unten.
 
 **P1 — Tarif-Verwaltung, abgeschlossen.** Anlegen, Bearbeiten und Löschen unter
 `/admin/plans`, mit Validierung, Audit-Protokoll und Kapazitätsbezug: Die Liste
@@ -47,9 +53,13 @@ Start ab — der Router hält sie nur im Speicher.
 Die Detailseite prüft die Adresse so, wie ein Minecraft-Client es tut, und
 zeigt Spielerzahl, Version und MOTD.
 
-Offen ist nur noch der DNS-Eintrag: `*.mc.neuhauser.app` muss auf die
-öffentliche IP des Hosts zeigen. Bis dahin funktioniert die Adresse lokal,
-aber nicht aus dem Internet.
+Steht: `panel.neuhauser.app` und `*.mc.neuhauser.app` zeigen auf den Host,
+Port 25565, 443 und 80 sind weitergeleitet.
+
+Läuft die Domain über Cloudflare, muss der Proxy für **beide** Einträge aus
+sein (graue Wolke). Der kostenlose Proxy versteht nur HTTP und HTTPS —
+Minecraft ist rohes TCP und käme nie an. Und mit Proxy vor `panel` kommt
+Caddy nicht an die ACME-Prüfung heran; das Ergebnis ist ein Fehler 521.
 
 **P5 — Konsole und Live-Daten, abgeschlossen.** Die Detailseite zeigt das
 Server-Log als fortlaufenden Stream und CPU- sowie Speicherauslastung als
@@ -96,6 +106,17 @@ Rückstufungen und Software-Wechsel verlangen eine ausdrückliche Bestätigung
 und weisen auf ein fehlendes Backup hin: Minecraft wandelt die Welt beim
 Hochstufen um, und zurück führt kein unterstützter Weg.
 
+**Konten-Verwaltung.** Die Selbstregistrierung ist abgeschaltet
+(`disableSignUp`) — der Riegel sitzt am Endpunkt, nicht an der Seite. Konten
+legt ein Admin unter `/admin/users` an; sie gelten sofort als bestätigt, es
+gibt keine Mail. Rollenwechsel und Löschen in derselben Liste, mit drei
+Sperren: nicht das eigene Konto, nicht der letzte Admin, und nicht solange
+die Person Server hat — Welten sollen nicht als Nebenwirkung verschwinden.
+
+Beim Anlegen eines Servers werden Name und Adresse **während des Tippens**
+geprüft, nicht erst beim Abschicken. Namen sind je Nutzer eindeutig, ohne
+Rücksicht auf Groß-/Kleinschreibung.
+
 Noch nicht da: Abrechnung (P8).
 
 ## Agent
@@ -132,10 +153,22 @@ Rollback in Sekunden. Ohne ZFS (Entwicklungs-Mac) fällt der Agent auf einfache
 Verzeichnisse zurück, warnt beim Start und meldet `hardQuota: false` — ein
 Server kann dort seine Grenze überschreiten.
 
+**Einhängen verlangt Benutzer-ID 0.** `zfs allow mount` deckt es unter Linux
+nicht ab, und ambientes `CAP_SYS_ADMIN` genügt ZFS ebenfalls nicht — gemessen,
+nicht vermutet. Der Agent ruft dafür `deploy/mc-zfs-helper` über eine
+sudo-Regel auf: drei Verben, nur Datasets unterhalb von `…/mc/srv-`, und vor
+dem `chown` die Prüfung, dass der Einhängepunkt wirklich unter `/srv/mc`
+liegt. Die Dateiverwaltung — der einzige Teil, der Benutzereingaben in Pfade
+übersetzt — bleibt unprivilegiert.
+
+Zum Anlegen selbst braucht das Dienstkonto trotzdem `CAP_SYS_ADMIN`: ZFS
+verlangt für `create` die mount-Fähigkeit als Voraussetzung, auch wenn das
+Einhängen danach separat scheitert.
+
 ## Tests
 
 ```bash
-pnpm test        # Kapazitätsrechnung und Tarif-Validierung, 25 Fälle
+pnpm test        # 143 Fälle: Kapazität, Pfad-Schutz, Validierung, Protokoll-Streams
 pnpm typecheck
 pnpm build
 ```
@@ -149,8 +182,26 @@ sudo ./deploy/setup.sh
 ```
 
 Richtet alles ein: ZFS-Pool, Docker, Firewall, Dienstkonten, TLS über Caddy,
-mc-router, Datenbank und die beiden systemd-Dienste. Einzelheiten und der
-unbeaufsichtigte Modus stehen in [deploy/README.md](deploy/README.md).
+mc-router, Datenbank und die beiden systemd-Dienste. Der Pool braucht keine
+eigene Platte — findet das Skript unpartitionierten Platz oder freie
+LVM-Extents, bietet es an, eine Partition daraus zu schneiden.
+
+Danach den ersten Admin anlegen. Das Panel kann das nicht, die
+Selbstregistrierung ist ja zu:
+
+```bash
+cd /opt/mc-saas/app
+sudo node scripts/create-admin.ts du@example.com "Dein Name"
+```
+
+Für spätere Code-Änderungen der kurze Weg, der den Host nicht anfasst:
+
+```bash
+sudo /opt/mc-saas/app/deploy/update.sh
+```
+
+Einzelheiten, der unbeaufsichtigte Modus und was bei nur einer Platte zu tun
+ist, stehen in [deploy/README.md](deploy/README.md).
 
 ## Entwicklung
 
@@ -186,20 +237,32 @@ pnpm dev
 `pnpm db:generate` muss nach jedem Klon und nach jeder Schema-Änderung laufen —
 der erzeugte Client liegt unter `src/generated/` und ist nicht eingecheckt.
 
-Danach auf <http://localhost:3000> registrieren. Der Bestätigungslink wird
-**nicht** verschickt, sondern steht im Terminal, in dem `pnpm dev` läuft
-(`MAIL_TRANSPORT=console`).
+### Erstes Konto
 
-### Ersten Admin anlegen
+Es gibt keine Registrierung, auch nicht in der Entwicklung. Das erste Konto
+kommt über die Shell:
 
-Erst registrieren und bestätigen, dann:
+```bash
+node scripts/create-admin.ts du@example.com "Dein Name"
+```
+
+Das Passwort steht danach einmal auf dem Schirm; mit `ADMIN_PASSWORD=…`
+davor lässt sich eines vorgeben. Alle weiteren Konten dann im Panel unter
+`/admin/users`.
+
+Ein bestehendes Konto hochstufen:
 
 ```bash
 node scripts/promote-admin.ts du@example.com
 ```
 
-Bewusst über die Shell und nicht über das Panel — sonst wäre die Admin-Rolle
-über die Anwendung selbst erreichbar.
+Beides bewusst über die Shell und nicht über das Panel — sonst wäre die
+Admin-Rolle über die Anwendung selbst erreichbar.
+
+Beide Skripte laufen direkt über Node, ohne `pnpm` und ohne `tsx`. Auf dem
+Host ist das kein Komfort, sondern nötig: `pnpm` kommt von corepack, und
+corepack legt seinen Cache unter `$HOME` an — für die Dienstkonten
+`/opt/mc-saas`, wo sie nicht schreiben dürfen.
 
 ### Node-Werte
 
@@ -225,13 +288,17 @@ Platz ist also selbst auf einer einzelnen SSD nicht der Engpass.
 ```
 prisma/schema.prisma     Datenmodell (Auth, Plan, Node, Server, Backup, Audit)
 prisma/seed.ts           Node und Standard-Tarife
-scripts/promote-admin.ts Erste Admin-Rolle vergeben
+scripts/create-admin.ts  Erstes Konto anlegen (das Panel kann es nicht)
+scripts/promote-admin.ts Bestehendes Konto hochstufen
 src/lib/auth.ts          better-auth, serverseitig
 src/lib/session.ts       requireUser / requireAdmin für Seiten
 src/lib/capacity.ts      Ressourcen-Buchhaltung, reine Funktionen
 src/lib/env.ts           Prüfung der Umgebungsvariablen beim Start
-src/app/(auth)/          Registrieren, Anmelden
+src/app/(auth)/          Anmelden
 src/app/(app)/           Dashboard und Admin, hinter Anmeldung
+agent/                   Node-Agent: Docker, ZFS, RCON, Routing
+agent/paths.ts           Pfad-Schutz des Dateimanagers, 18 Tests
+deploy/                  setup.sh, update.sh, Units, Compose, Caddyfile
 ```
 
 ## Hinweis zum Arbeitsverzeichnis

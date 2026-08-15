@@ -857,12 +857,14 @@ ${B}Was jetzt noch fehlt:${N}
   2. Im Router weiterleiten: 25565/TCP, 443/TCP, 80/TCP
      ${D}Nicht 22, 5432, 6379, 8080 oder 8787.${N}
 
-  3. Auf $PANEL_HOST registrieren. Der Bestätigungslink wird noch nicht
-     verschickt, sondern steht im Log:
-       journalctl -u mc-panel -f
+  3. Ersten Admin anlegen. Das Panel kann das nicht — die
+     Selbstregistrierung ist abgeschaltet, Konten legt ein Admin an, und
+     den ersten gibt es noch nicht:
+       cd $APP_DIR && sudo node scripts/create-admin.ts DEINE@MAIL "Dein Name"
 
-  4. Danach zum Admin machen:
-       cd $APP_DIR && sudo -u mcpanel node scripts/promote-admin.ts DEINE@MAIL
+     Das Passwort steht danach einmal auf dem Schirm. Notieren.
+
+  4. Auf $PANEL_HOST anmelden. Weitere Konten dann unter Admin -> Konten.
 
 ${B}Betrieb:${N}
   systemctl status mc-agent mc-panel
