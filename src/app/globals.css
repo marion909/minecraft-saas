@@ -399,6 +399,13 @@ tbody tr:last-child td {
   border-color: var(--crit);
 }
 
+/* Gegenstück zu .field-error: dieselbe Größe und Position, damit beim
+   Wechsel zwischen „frei“ und einer Meldung nichts springt. */
+.field-ok {
+  font-size: 0.78rem;
+  color: var(--ok, var(--accent));
+}
+
 .checkbox {
   display: flex;
   align-items: flex-start;

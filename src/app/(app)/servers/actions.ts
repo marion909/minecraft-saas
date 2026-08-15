@@ -11,6 +11,7 @@ import { audit } from "@/lib/audit";
 import { computeCapacity, fits } from "@/lib/capacity";
 import { db } from "@/lib/db";
 import { isAdmin } from "@/lib/roles";
+import { checkServerName } from "@/lib/server-name";
 import { requireUser } from "@/lib/session";
 import { checkSubdomain } from "@/lib/subdomain";
 
@@ -45,22 +46,74 @@ async function loadOwnServer(serverId: string) {
   return { session, server };
 }
 
+/**
+ * Rückmeldung, während getippt wird.
+ *
+ * Bewusst dieselben Prüfungen wie beim Anlegen, nur ohne Nebenwirkung —
+ * und ohne Anspruch auf Endgültigkeit: Zwischen der Antwort hier und dem
+ * Abschicken kann jemand anders dieselbe Adresse belegen. Deshalb prüft
+ * createServer erneut, und diese Funktion darf sich irren, ohne Schaden
+ * anzurichten.
+ */
+export type Availability =
+  | { state: "frei" }
+  | { state: "belegt"; reason: string }
+  | { state: "ungültig"; reason: string };
+
+export async function checkNameAvailable(input: string): Promise<Availability> {
+  const session = await requireUser();
+
+  const parsed = checkServerName(input);
+  if (!parsed.ok) return { state: "ungültig", reason: parsed.reason };
+
+  // Nur die eigenen Server: Der Name steht bloß im Panel, und wie fremde
+  // Leute ihre Server nennen, geht niemanden etwas an — die Prüfung soll
+  // auch nicht verraten, dass es sie gibt.
+  const existing = await db.server.findFirst({
+    where: {
+      userId: session.user.id,
+      name: { equals: parsed.value, mode: "insensitive" },
+    },
+    select: { id: true },
+  });
+
+  return existing
+    ? { state: "belegt", reason: "So heißt schon einer deiner Server." }
+    : { state: "frei" };
+}
+
+export async function checkAddressAvailable(
+  input: string,
+): Promise<Availability> {
+  await requireUser();
+
+  const parsed = checkSubdomain(input);
+  if (!parsed.ok) return { state: "ungültig", reason: parsed.reason };
+
+  const existing = await db.server.findUnique({
+    where: { subdomain: parsed.value },
+    select: { id: true },
+  });
+
+  return existing
+    ? { state: "belegt", reason: "Diese Adresse ist schon vergeben." }
+    : { state: "frei" };
+}
+
 export async function createServer(
   _previous: ServerFormState,
   formData: FormData,
 ): Promise<ServerFormState> {
   const session = await requireUser();
 
-  const name = String(formData.get("name") ?? "").trim();
   const planId = String(formData.get("planId") ?? "");
   const serverType = String(formData.get("serverType") ?? "");
   const mcVersion = String(formData.get("mcVersion") ?? "").trim() || "LATEST";
 
   const fields: Record<string, string> = {};
 
-  if (name.length < 2 || name.length > 40) {
-    fields.name = "Zwischen 2 und 40 Zeichen.";
-  }
+  const parsedName = checkServerName(String(formData.get("name") ?? ""));
+  if (!parsedName.ok) fields.name = parsedName.reason;
 
   const subdomain = checkSubdomain(String(formData.get("subdomain") ?? ""));
   if (!subdomain.ok) fields.subdomain = subdomain.reason;
@@ -76,8 +129,22 @@ export async function createServer(
     fields.planId = "Dieser Tarif ist nicht buchbar.";
   }
 
-  if (Object.keys(fields).length > 0 || !plan || !subdomain.ok) {
+  if (Object.keys(fields).length > 0 || !plan || !subdomain.ok || !parsedName.ok) {
     return { fields };
+  }
+
+  const name = parsedName.value;
+
+  // Dieselben zwei Prüfungen laufen schon währenddes Tippens über
+  // checkNameAvailable/checkAddressAvailable. Hier stehen sie trotzdem:
+  // Zwischen der letzten Prüfung im Browser und dem Abschicken liegt Zeit,
+  // und die Bedingung kann sich darin ändern.
+  const nameTaken = await db.server.findFirst({
+    where: { userId: session.user.id, name: { equals: name, mode: "insensitive" } },
+    select: { id: true },
+  });
+  if (nameTaken) {
+    return { fields: { name: "So heißt schon einer deiner Server." } };
   }
 
   const taken = await db.server.findUnique({

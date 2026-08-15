@@ -3,7 +3,51 @@
 import Link from "next/link";
 import { useActionState, useState } from "react";
 
-import { createServer, type ServerFormState } from "@/app/(app)/servers/actions";
+import {
+  checkAddressAvailable,
+  checkNameAvailable,
+  createServer,
+  type ServerFormState,
+} from "@/app/(app)/servers/actions";
+
+import {
+  blocks,
+  useAvailability,
+  type AvailabilityState,
+} from "./use-availability";
+
+/**
+ * Der Platz unter dem Feld zeigt genau eine Sache: erst den Hinweis, beim
+ * Tippen den Stand der Prüfung, nach einem abgelehnten Abschicken die
+ * Meldung vom Server. Nichts davon springt übereinander.
+ */
+function FieldStatus({
+  state,
+  serverError,
+  hint,
+}: {
+  state: AvailabilityState;
+  serverError?: string;
+  hint: string;
+}) {
+  if (state.status === "prüft") {
+    return <span className="hint">wird geprüft …</span>;
+  }
+
+  if (state.status === "fertig") {
+    return state.result.state === "frei" ? (
+      <span className="field-ok">frei</span>
+    ) : (
+      <span className="field-error">{state.result.reason}</span>
+    );
+  }
+
+  if (serverError) {
+    return <span className="field-error">{serverError}</span>;
+  }
+
+  return <span className="hint">{hint}</span>;
+}
 
 export type PlanChoice = {
   id: string;
@@ -36,8 +80,12 @@ export function CreateServerForm({
     createServer,
     {},
   );
+  const [name, setName] = useState("");
   const [subdomain, setSubdomain] = useState("");
   const [planId, setPlanId] = useState(plans.find((p) => p.slots > 0)?.id ?? "");
+
+  const nameState = useAvailability(name, checkNameAvailable);
+  const addressState = useAvailability(subdomain, checkAddressAvailable);
 
   return (
     <form className="stack" action={formAction}>
@@ -45,12 +93,20 @@ export function CreateServerForm({
 
       <div className="field">
         <label htmlFor="name">Name</label>
-        <input id="name" name="name" required maxLength={40} defaultValue="" />
-        {state.fields?.name ? (
-          <span className="field-error">{state.fields.name}</span>
-        ) : (
-          <span className="hint">Nur für dich, im Panel.</span>
-        )}
+        <input
+          id="name"
+          name="name"
+          required
+          maxLength={40}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          aria-invalid={blocks(nameState) ? true : undefined}
+        />
+        <FieldStatus
+          state={nameState}
+          serverError={state.fields?.name}
+          hint="Nur für dich, im Panel."
+        />
       </div>
 
       <div className="field">
@@ -65,17 +121,15 @@ export function CreateServerForm({
               setSubdomain(event.target.value.toLowerCase().replace(/\s/g, ""))
             }
             placeholder="meinserver"
+            aria-invalid={blocks(addressState) ? true : undefined}
           />
           <span className="addr-suffix">.{publicHost}</span>
         </div>
-        {state.fields?.subdomain ? (
-          <span className="field-error">{state.fields.subdomain}</span>
-        ) : (
-          <span className="hint">
-            Unter dieser Adresse verbinden sich Spieler. Später nicht mehr
-            änderbar.
-          </span>
-        )}
+        <FieldStatus
+          state={addressState}
+          serverError={state.fields?.subdomain}
+          hint="Unter dieser Adresse verbinden sich Spieler. Später nicht mehr änderbar."
+        />
       </div>
 
       <fieldset className="fieldset">
@@ -156,7 +210,12 @@ export function CreateServerForm({
         <button
           className="btn btn-primary"
           type="submit"
-          disabled={pending || plans.every((plan) => plan.slots <= 0)}
+          disabled={
+            pending ||
+            plans.every((plan) => plan.slots <= 0) ||
+            blocks(nameState) ||
+            blocks(addressState)
+          }
         >
           {pending ? "Wird angelegt …" : "Server anlegen"}
         </button>
