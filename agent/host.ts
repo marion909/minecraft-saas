@@ -7,6 +7,7 @@
  * sudo-Regel, statt den ganzen Agent zu erheben. Siehe deploy/mc-host-helper.
  */
 import { execFile } from "node:child_process";
+import { constants as fsConstants } from "node:fs";
 import fsPromises from "node:fs/promises";
 import os from "node:os";
 import { promisify } from "node:util";
@@ -98,16 +99,40 @@ export async function canPower(): Promise<{ ok: boolean; error: string | null }>
     await run("sudo", ["-n", "-l", HOST_HELPER], { timeout: 5000 });
     return { ok: true, error: null };
   } catch (error) {
-    const detail =
-      error instanceof Error && error.message
-        ? error.message.split("\n")[0]
-        : String(error);
+    // Zwei verschiedene Ursachen mit derselben Wirkung: Die Datei fehlt,
+    // oder sie ist nicht freigegeben. Wer das nicht auseinanderhält,
+    // sucht an der falschen Stelle — deshalb wird hier nachgesehen,
+    // statt beides in einen Satz zu werfen.
+    const vorhanden = await fsPromises
+      .access(HOST_HELPER, fsConstants.X_OK)
+      .then(() => true)
+      .catch(() => false);
+
+    if (!vorhanden) {
+      return {
+        ok: false,
+        error:
+          `${HOST_HELPER} liegt nicht dort oder ist nicht ausführbar. ` +
+          `Installiert wird er von deploy/setup.sh und deploy/update.sh.`,
+      };
+    }
+
+    // Die eigentliche sudo-Meldung steht in stderr, nicht in message —
+    // dort steht nur "Command failed", was niemandem weiterhilft.
+    // Schweigt sudo ganz, gibt es für diesen Befehl schlicht keine Regel.
+    const stderr = String(
+      (error as { stderr?: unknown }).stderr ?? "",
+    ).trim();
 
     return {
       ok: false,
       error:
-        `${HOST_HELPER} ist für diesen Dienst nicht freigegeben (${detail}). ` +
-        `Liegt der Helfer dort, und nennt ihn /etc/sudoers.d/mc-agent?`,
+        `Der Helfer liegt bereit, aber sudo lässt ihn nicht durch` +
+        (stderr ? ` (${stderr.split("\n")[0]})` : "") +
+        `. In /etc/sudoers.d/mc-agent fehlt die Zeile für ` +
+        `${HOST_HELPER} — bei einer Installation von vor der ` +
+        `Host-Steuerung steht dort nur der ZFS-Helfer. Ergänzt wird sie ` +
+        `von deploy/update.sh.`,
     };
   }
 }
