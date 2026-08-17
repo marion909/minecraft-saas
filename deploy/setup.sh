@@ -650,6 +650,11 @@ AGENT_ROUTER_URL="http://127.0.0.1:8080"
 AGENT_ROUTER_HOST="127.0.0.1"
 AGENT_ROUTER_PORT="25565"
 AGENT_MAX_UPLOAD_MB="256"
+# Eigene Grenze für eingespielte Backups: Ein Weltarchiv ist um
+# Größenordnungen größer als ein Plugin. Es wird unter
+# ${BACKUP_ROOT}/imports zwischengelegt und nach dem Entpacken entfernt;
+# so viel Platz muss dort frei sein.
+AGENT_MAX_IMPORT_MB="4096"
 # RCON bleibt im internen Netz — auf dem Linux-Host erreicht der Agent
 # die Container direkt über die Bridge.
 AGENT_PUBLISH_RCON="false"

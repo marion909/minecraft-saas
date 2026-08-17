@@ -84,5 +84,12 @@ export function loadConfig() {
     // Obergrenze pro Upload. Modpacks sind groß, aber nicht beliebig —
     // ohne Grenze läuft die Platte über, bevor eine Quota greift.
     maxUploadBytes: Number(process.env.AGENT_MAX_UPLOAD_MB ?? 256) * 1024 * 1024,
+
+    // Eigene, deutlich höhere Grenze für eingespielte Backups: Ein
+    // Weltarchiv ist um Größenordnungen größer als ein Plugin. Die
+    // eigentliche Schranke ist ohnehin die Quota des Servers — was
+    // entpackt nicht hineinpasst, wird vorher abgelehnt.
+    maxImportBytes:
+      Number(process.env.AGENT_MAX_IMPORT_MB ?? 4096) * 1024 * 1024,
   };
 }

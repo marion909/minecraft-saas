@@ -1,5 +1,6 @@
 import fsPromises from "node:fs/promises";
 import http from "node:http";
+import path from "node:path";
 
 import { loadConfig, type AgentConfig } from "./config.ts";
 import { DockerLayer } from "./docker.ts";
@@ -29,6 +30,7 @@ import {
   containerName,
   snapshotLabel,
 } from "./naming.ts";
+import { applyArchive, verifyArchive } from "./restore.ts";
 import { backendFor, RouterClient } from "./router.ts";
 import { SseStream } from "./sse.ts";
 import { SampleFanout } from "./stats.ts";
@@ -580,6 +582,181 @@ export function createAgent(config: AgentConfig) {
     });
 
     return { task, wasRunning };
+  });
+
+  /**
+   * Ein Backup herunterladen — immer als tar.gz.
+   *
+   * Antwortet selbst und streamt, statt eine Datei zwischenzulegen: Ein
+   * Weltarchiv kann Gigabytes haben, und der Platz dafür wäre genau der,
+   * der auf einem vollen Node ohnehin knapp ist.
+   */
+  router.get("/servers/:id/backups/:label/archive", async ({ params, response }) => {
+    const serverId = assertServerId(params.id ?? "");
+    const label = params.label ?? "";
+
+    if (!/^[A-Za-z0-9._-]+$/.test(label)) {
+      throw new HttpError(400, "Ungültige Backup-Kennung.");
+    }
+
+    const vorhanden = await storage.listSnapshots(serverId);
+    if (!vorhanden.some((snapshot) => snapshot.label === label)) {
+      throw new HttpError(404, `Kein Backup mit der Kennung "${label}".`);
+    }
+
+    const archiv = await storage.readSnapshot(serverId, label);
+
+    response.writeHead(200, {
+      "content-type": "application/gzip",
+      ...(archiv.sizeBytes === null
+        ? {}
+        : { "content-length": String(archiv.sizeBytes) }),
+    });
+
+    archiv.stream.pipe(response);
+
+    // Bricht der Browser ab, endet auch das Packen — sonst liefe tar auf
+    // dem Host weiter und schriebe in eine Leitung, die niemand liest.
+    response.on("close", () => {
+      if (!response.writableEnded) archiv.stream.destroy();
+    });
+
+    archiv.stream.on("error", (error: Error) => {
+      console.error(`[agent] Backup-Download ${serverId}/${label}:`, error);
+      response.destroy();
+    });
+  });
+
+  /**
+   * Ein Archiv einspielen. Ersetzt die Welt vollständig.
+   *
+   * Nimmt die Rohdaten entgegen, legt sie neben den Backups ab und prüft
+   * sie, bevor irgendetwas gelöscht wird — siehe restore.ts. Der Server
+   * wird dafür angehalten und danach wieder gestartet, wenn er lief.
+   */
+  router.post("/servers/:id/backups/import", async ({ params, request, response }) => {
+    const serverId = assertServerId(params.id ?? "");
+    assertIdle(serverId);
+
+    if (!(await storage.exists(serverId))) {
+      throw new HttpError(404, "Für diesen Server gibt es keinen Speicher.");
+    }
+
+    const url = new URL(request.url ?? "/", "http://agent.local");
+    const rconPassword = url.searchParams.get("rconPassword") ?? undefined;
+
+    const ablage = path.join(config.storage.snapshotRoot, "imports");
+    await fsPromises.mkdir(ablage, { recursive: true });
+
+    const ziel = path.join(ablage, `${serverId}-${Date.now()}.tar.gz`);
+    const grenze = config.maxImportBytes;
+
+    let geschrieben = 0;
+    const handle = await fsPromises.open(ziel, "w");
+
+    try {
+      for await (const chunk of request) {
+        geschrieben += (chunk as Buffer).length;
+
+        if (geschrieben > grenze) {
+          await handle.close();
+          await fsPromises.rm(ziel, { force: true });
+          throw new HttpError(
+            413,
+            `Archiv überschreitet das Limit von ${Math.round(grenze / 1024 / 1024)} MB.`,
+          );
+        }
+
+        await handle.write(chunk as Buffer);
+      }
+      await handle.close();
+    } catch (error) {
+      await handle.close().catch(() => {});
+      await fsPromises.rm(ziel, { force: true }).catch(() => {});
+      throw error;
+    }
+
+    if (geschrieben === 0) {
+      await fsPromises.rm(ziel, { force: true });
+      throw new HttpError(400, "Es kamen keine Daten an.");
+    }
+
+    const usage = await storage.usage(serverId).catch(() => null);
+    const limits = {
+      // Die Quota des Servers ist die harte Schranke. Kennt der Treiber
+      // keine, bleibt die allgemeine Obergrenze.
+      maxTotalBytes: usage?.quotaBytes ?? grenze,
+      maxEntries: 500_000,
+    };
+
+    const vorher = await docker.inspect(serverId);
+    const liefVorher = vorher.containerRunning;
+
+    const task = tasks.start("backup.import", serverId, async (report) => {
+      try {
+        // Zuerst das Archiv beurteilen, solange der Server noch läuft.
+        // Ein kaputtes oder bösartiges Archiv soll niemanden aus dem
+        // Spiel werfen — es wird abgelehnt, bevor irgendetwas angefasst
+        // wird.
+        report("Archiv prüfen");
+        const geprüft = await verifyArchive(ziel, limits);
+        report(
+          `${geprüft.entries} Einträge, ${Math.round(geprüft.totalBytes / 1024 / 1024)} MB entpackt`,
+        );
+
+        if (liefVorher) {
+          if (!rconPassword) {
+            throw new Error(
+              "Der Server läuft, aber es kam kein RCON-Passwort mit — " +
+                "ohne das lässt sich die Welt nicht sauber sichern.",
+            );
+          }
+          report("Server stoppen");
+          const gestoppt = await docker.stop(serverId, rconPassword);
+          report(`gestoppt über ${gestoppt.method}`);
+        }
+
+        // Erst jetzt, mit stehendem Server, ist der Sicherheitsschnappschuss
+        // konsistent. Er ist der einzige Weg zurück, wenn das eingespielte
+        // Archiv sich als das falsche herausstellt.
+        const rettung = `vor-import-${snapshotLabel()}`;
+        report(`Sicherung anlegen: ${rettung}`);
+        await storage.snapshot(serverId, rettung);
+
+        await applyArchive(storage.path(serverId), ziel, report);
+
+        // Die entpackten Dateien gehören dem Agent; der Server läuft als
+        // anderer Benutzer und könnte seine Welt sonst nicht speichern.
+        // Wie das gerichtet wird, weiß nur der Speichertreiber.
+        report("Für den Container freigeben");
+        await storage.claim(serverId);
+
+        report(`${geprüft.entries} Einträge eingespielt`);
+
+        if (liefVorher) {
+          report("Server wieder starten");
+          await docker.start(serverId);
+          const bereit = await docker.waitUntilReady(serverId, { rconPassword });
+
+          if (!bereit.ready) {
+            throw new Error(
+              `${bereit.reason ?? "Server kam nicht hoch."} Das eingespielte ` +
+                `Archiv liegt auf der Platte; mit dem Backup "${rettung}" ` +
+                `lässt sich der vorherige Stand zurückholen.`,
+            );
+          }
+          report("bereit");
+        } else {
+          report("Server bleibt gestoppt");
+        }
+      } finally {
+        // Das Hochgeladene wird nicht aufbewahrt: Es liegt jetzt entpackt
+        // im Serververzeichnis und zählt sonst doppelt gegen die Platte.
+        await fsPromises.rm(ziel, { force: true }).catch(() => {});
+      }
+    });
+
+    sendJson(response, 200, { task, receivedBytes: geschrieben });
   });
 
   router.delete("/servers/:id/backups/:label", async ({ params }) => {

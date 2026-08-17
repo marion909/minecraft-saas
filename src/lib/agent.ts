@@ -345,6 +345,22 @@ export class AgentClient {
     );
   }
 
+  /**
+   * Adresse des Backup-Archivs beim Agent.
+   *
+   * Gibt bewusst nur die URL zurück statt der Daten: Ein Weltarchiv
+   * wandert als Strom durch das Panel zum Browser und darf nirgends
+   * vollständig im Speicher liegen. Wer sie benutzt, braucht auch das
+   * Token — beides bleibt serverseitig.
+   */
+  archiveUrl(serverId: string, label: string): string {
+    return `${this.baseUrl}/servers/${serverId}/backups/${encodeURIComponent(label)}/archive`;
+  }
+
+  get authHeader(): string {
+    return `Bearer ${this.token}`;
+  }
+
   // --- Einstellungen ---------------------------------------------------
 
   getProperties(serverId: string) {

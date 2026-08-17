@@ -126,6 +126,20 @@ export function BackupPanel({
                   <td className="num">{size(backup.usedBytes)}</td>
                   <td>
                     <div className="actions">
+                      {/*
+                        Ein gewöhnlicher Link, kein Knopf mit fetch: Der
+                        Browser lädt die Datei dann selbst herunter, mit
+                        Fortschritt und Wiederaufnahme, und nichts davon
+                        muss durch den Arbeitsspeicher der Seite.
+                      */}
+                      <a
+                        className="btn btn-quiet btn-small"
+                        href={`/api/servers/${serverId}/backups/${encodeURIComponent(backup.label)}`}
+                        download
+                      >
+                        Herunterladen
+                      </a>
+
                       <button
                         className="btn btn-quiet btn-small"
                         type="button"
@@ -195,8 +209,9 @@ export function BackupPanel({
         {incremental
           ? "Backups sind Snapshots: Sie kosten nur den Platz der Änderungen und sind in Sekunden fertig."
           : "Auf diesem Node werden vollständige Archive angelegt — sie brauchen so viel Platz wie die Welt selbst und dauern entsprechend."}{" "}
-        Sie schützen gegen Griefing und kaputte Plugins, nicht gegen einen
-        Plattenausfall.
+        Sie liegen auf derselben Platte wie der Server und schützen damit gegen
+        Griefing und kaputte Plugins, nicht gegen einen Plattenausfall. Dagegen
+        hilft nur, sie herunterzuladen.
       </p>
     </div>
   );

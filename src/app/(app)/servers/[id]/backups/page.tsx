@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ServerStatus } from "@/generated/prisma/enums";
+import { BackupImport } from "@/components/backup-import";
 import { BackupPanel, type BackupEntry } from "@/components/backup-panel";
 import { AgentClient } from "@/lib/agent";
 import { ForeignServerNotice } from "@/components/foreign-server-notice";
@@ -102,6 +103,15 @@ export default async function BackupsPage({
               maxBackups={server.plan.maxBackups}
               incremental={listing.hardQuota}
               busy={BUSY.includes(server.status)}
+            />
+          </div>
+
+          <div className="card danger-zone">
+            <h2 style={{ fontSize: "1.05rem" }}>Archiv einspielen</h2>
+            <BackupImport
+              serverId={server.id}
+              serverName={server.name}
+              disabled={BUSY.includes(server.status)}
             />
           </div>
         </>

@@ -1,8 +1,10 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import fs from "node:fs/promises";
 import { promisify } from "node:util";
 
 import { datasetName } from "../naming.ts";
-import type { SnapshotInfo, Storage, Usage } from "./types.ts";
+import { chownRecursive, CONTAINER_GID, CONTAINER_UID } from "../restore.ts";
+import type { SnapshotArchive, SnapshotInfo, Storage, Usage } from "./types.ts";
 
 const run = promisify(execFile);
 
@@ -177,5 +179,69 @@ export class ZfsStorage implements Storage {
 
   async destroySnapshot(serverId: string, label: string): Promise<void> {
     await run("zfs", ["destroy", `${this.#dataset(serverId)}@${label}`]);
+  }
+
+  /**
+   * Übereignet den Baum dem Container-Benutzer (UID 1000 im itzg-Image).
+   *
+   * Ohne das könnte der Server seine eigene Welt nicht speichern, nachdem
+   * ein Archiv eingespielt wurde — die Dateien gehörten dem Agent.
+   * Braucht CAP_CHOWN, das die systemd-Unit mitgibt.
+   */
+  async claim(serverId: string): Promise<void> {
+    await chownRecursive(this.path(serverId), CONTAINER_UID, CONTAINER_GID);
+  }
+
+  /**
+   * Packt einen Snapshot beim Herunterladen zu tar.gz.
+   *
+   * Der Zugriff läuft über `.zfs/snapshot/<label>` unterhalb des
+   * Einhängepunkts. Das Verzeichnis ist unsichtbar (`snapdir=hidden` ist
+   * die Voreinstellung), aber begehbar — ZFS hängt den Snapshot beim
+   * ersten Zugriff selbst ein.
+   *
+   * Bewusst nicht `zfs send`: Dessen Strom lässt sich nur auf einem
+   * anderen ZFS wieder einlesen. Wer sein Backup herunterlädt, will
+   * hineinsehen können, und sei es nur, um eine einzelne Datei
+   * herauszuholen.
+   *
+   * Die Größe steht vorher nicht fest — das Archiv entsteht erst beim
+   * Übertragen.
+   */
+  async readSnapshot(
+    serverId: string,
+    label: string,
+  ): Promise<SnapshotArchive> {
+    const verzeichnis = `${this.path(serverId)}/.zfs/snapshot/${label}`;
+
+    try {
+      await fs.access(verzeichnis);
+    } catch {
+      throw new Error(
+        `Snapshot "${label}" ist unter ${verzeichnis} nicht erreichbar. ` +
+          `Existiert er noch (zfs list -t snapshot), und ist snapdir nicht ` +
+          `auf "disabled" gesetzt?`,
+      );
+    }
+
+    const kind = spawn("tar", ["-czf", "-", "-C", verzeichnis, "."], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let fehler = "";
+    kind.stderr.on("data", (teil: Buffer) => {
+      // Nur den Anfang behalten; tar kann sehr gesprächig werden.
+      if (fehler.length < 2000) fehler += teil.toString("utf8");
+    });
+
+    kind.on("close", (code) => {
+      if (code !== 0) {
+        kind.stdout.destroy(
+          new Error(`tar endete mit ${code}: ${fehler.trim() || "kein Grund genannt"}`),
+        );
+      }
+    });
+
+    return { stream: kind.stdout, sizeBytes: null };
   }
 }

@@ -32,6 +32,19 @@ Downloads.
 | 16 | Helfer nach `/usr/local/sbin`, sudo-Regeln, systemd-Dienste `mc-agent` und `mc-panel` |
 | 17 | Abnahme, inklusive Prüfung auf ungewollt offene Container-Ports |
 
+### Platz für eingespielte Backups
+
+Ein hochgeladenes Archiv wird unter `${BACKUP_ROOT}/imports` zwischengelegt,
+geprüft und nach dem Entpacken wieder entfernt. Es liegt dort also nur
+während des Vorgangs — aber es liegt dort, und zwar zusätzlich zur Welt, die
+gleich daraus entsteht. Auf einer knappen Platte ist das der Moment, in dem
+sie überläuft. Die Obergrenze steht als `AGENT_MAX_IMPORT_MB` in der `.env`
+(Voreinstellung 4096).
+
+Bewusst nicht `/tmp`: Wo das ein tmpfs ist, ginge ein Weltarchiv in den
+Arbeitsspeicher — auf einem Host, dessen RAM bis auf die Reserve an
+Spielserver vergeben ist.
+
 ### Die beiden Helfer
 
 Zwei Dinge kann der Agent nicht selbst, weil sie Benutzer-ID 0 verlangen:

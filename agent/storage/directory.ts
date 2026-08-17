@@ -1,9 +1,10 @@
 import { execFile } from "node:child_process";
+import { createReadStream } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import type { SnapshotInfo, Storage, Usage } from "./types.ts";
+import type { SnapshotArchive, SnapshotInfo, Storage, Usage } from "./types.ts";
 
 const run = promisify(execFile);
 
@@ -133,6 +134,41 @@ export class DirectoryStorage implements Storage {
     await fs.rm(path.join(this.#snapshotDir(serverId), `${label}.tar.gz`), {
       force: true,
     });
+  }
+
+  /**
+   * Hier gibt es nichts zu übereignen.
+   *
+   * Ein `chown` auf UID 1000 verlangt Rechte, die ein
+   * Entwicklungsrechner nicht hergibt — auf macOS scheitert er mit
+   * EPERM. Stattdessen dasselbe wie beim Anlegen: 0777 auf das
+   * Wurzelverzeichnis, damit der Container hineinschreiben kann, egal
+   * wem es gehört.
+   */
+  async claim(serverId: string): Promise<void> {
+    await fs.chmod(this.path(serverId), 0o777);
+  }
+
+  /**
+   * Hier liegt das Backup schon als tar.gz — es wird unverändert
+   * durchgereicht. Dadurch ist die Größe bekannt, und der Browser kann
+   * einen Fortschritt anzeigen.
+   */
+  async readSnapshot(
+    serverId: string,
+    label: string,
+  ): Promise<SnapshotArchive> {
+    const archiv = path.join(this.#snapshotDir(serverId), `${label}.tar.gz`);
+
+    const stat = await fs.stat(archiv).catch(() => null);
+    if (!stat) {
+      throw new Error(`Kein Backup mit der Kennung "${label}".`);
+    }
+
+    return {
+      stream: createReadStream(archiv),
+      sizeBytes: stat.size,
+    };
   }
 }
 

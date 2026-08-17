@@ -96,6 +96,40 @@ Zurückspielen stoppt den Server, spielt zurück und startet ihn wieder. Es
 verlangt, dass der Servername abgetippt wird — alles seit der Sicherung geht
 dabei verloren.
 
+**Herunterladen und Einspielen.** Jedes Backup lässt sich als `.tar.gz`
+herunterladen — auch von einem ZFS-Node, wo es als Snapshot liegt: Der Agent
+packt es beim Übertragen. Bewusst kein `zfs send`, dessen Strom nur ein
+anderes ZFS wieder einlesen kann; ein Archiv öffnet jeder, und sei es, um
+eine einzelne Datei herauszuholen. Umgekehrt lässt sich ein Archiv wieder
+einspielen — aus einer Sicherung auf der eigenen Platte oder von einem
+anderen Server.
+
+Das ist zugleich die einzige Antwort auf den Plattenausfall: Snapshots liegen
+auf derselben SSD wie die Welt.
+
+Vor dem Einspielen legt der Agent selbst ein Backup des aktuellen Standes an
+(`vor-import-…`), damit der Weg zurück offen bleibt. Beim Durchspielen war
+genau das die Rettung: Ein Archiv, das nur den Eintrag `./` enthielt, kam
+durch die Prüfung und leerte den Testserver vollständig — 29 Einträge auf 0.
+Ein Backup ohne Nutzdaten ist kein Backup, sondern ein Löschbefehl; die
+Prüfung verlangt seitdem mindestens eine Datei mit Inhalt. Metadateien der
+Betriebssysteme zählen dabei nicht, denn im zweiten Anlauf kam dasselbe
+Archiv mit einer AppleDouble-Datei `._.` erneut durch.
+
+Ein hochgeladenes Archiv wird geprüft, **bevor** der Server angefasst wird:
+kein `..` im Pfad, keine absoluten Pfade, nur Dateien und Verzeichnisse —
+symbolische und harte Verweise, Gerätedateien und Pipes fliegen raus. Ein
+Symlink `welt -> /etc`, gefolgt von `welt/passwd`, ist der klassische Weg,
+aus einem Verzeichnis auszubrechen.
+
+Gelesen wird dafür das tar-Format selbst und nicht die Ausgabe von `tar -tv`:
+Die unterscheidet sich zwischen GNU tar und bsdtar in Spaltenzahl und
+Kodierung — GNU schreibt Umlaute als `\303\266`. Namen über 100 Zeichen legt
+tar in einem eigenen Eintrag ab (GNU als Typ `L`, bsdtar als pax); wer den
+überspringt, prüft einen abgeschnittenen Namen, und ein Angreifer macht
+seinen Pfad einfach lang genug. Beide Wege werden aufgelöst, und die Tests
+laufen gegen echte Archive auf beiden Plattformen.
+
 **Wechsel von Version und Server-Software** liegt unter
 `/servers/:id/settings`. Der Container wird dabei ersetzt — Umgebungsvariablen
 und Speichergrenzen schreibt Docker beim Anlegen fest und lassen sich nicht
@@ -180,6 +214,8 @@ Endpunkte (alle mit `Authorization: Bearer $AGENT_TOKEN`):
 | POST | `/servers/:id/command` | RCON-Befehl absetzen |
 | POST | `/servers/:id/backup` | Snapshot im laufenden Betrieb |
 | GET | `/servers/:id/backups` | vorhandene Snapshots |
+| GET | `/servers/:id/backups/:label/archive` | Backup als tar.gz herunterladen |
+| POST | `/servers/:id/backups/import` | Archiv prüfen und einspielen |
 | GET | `/host` | Laufzeit, Last, Speicher, Platte, ausstehender Neustart |
 | POST | `/host/power` | Server anhalten, dann neu starten oder abschalten |
 | GET | `/tasks/:id` | Fortschritt langer Vorgänge |
@@ -224,7 +260,7 @@ nur die Datenbank kennt sie, und der Helfer bekommt sie nie zu sehen.
 ## Tests
 
 ```bash
-pnpm test        # 177 Fälle: Kapazität, Node-Wahl, Pfad-Schutz, Validierung, Streams
+pnpm test        # 203 Fälle: Kapazität, Node-Wahl, Archiv-Prüfung, Pfad-Schutz, Validierung
 pnpm typecheck
 pnpm build
 ```
@@ -355,6 +391,8 @@ src/app/(app)/           Dashboard und Admin, hinter Anmeldung
 src/app/(app)/admin/     Server aller Konten, Konten, Tarife, Nodes, Host
 agent/                   Node-Agent: Docker, ZFS, RCON, Routing
 agent/paths.ts           Pfad-Schutz des Dateimanagers, 18 Tests
+agent/archive.ts         Prüfung hochgeladener Backups, 26 Tests
+agent/restore.ts         Archiv einspielen: prüfen, leeren, entpacken
 agent/host.ts            Zustand des Hosts, Neustart über den Helfer
 deploy/                  setup.sh, update.sh, Units, Compose, Caddyfile
 deploy/mc-zfs-helper     Die ZFS-Schritte, die root verlangen
