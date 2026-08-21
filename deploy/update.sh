@@ -33,6 +33,71 @@ die()  { printf '\n%sAbbruch:%s %s\n' "$R" "$N" "$1" >&2; exit 1; }
 
 cd "$APP_DIR"
 
+# Gleicht die Datenbank ans Schema an.
+#
+# Bewusst nicht an die touched-Prüfung gebunden: Der Abgleich kann von
+# einem früheren Lauf offen sein — etwa weil er eine Bestätigung
+# brauchte und abgebrochen wurde. Dann hätte sich schema.prisma seither
+# nicht mehr geändert, und er käme nie wieder dran. `db push` meldet von
+# selbst "already in sync", wenn nichts zu tun ist; das kostet nichts.
+datenbank_angleichen() {
+  # Das Angleichen läuft hier und nicht als Hinweis zum Abtippen.
+  # Grund: Die .env gehört root, weil Geheimnisse darin stehen — ein
+  # `pnpm db:push` als gewöhnlicher Benutzer findet DATABASE_URL nicht
+  # und meldet das als fehlende Variable. Dieses Skript läuft ohnehin
+  # als root und im richtigen Verzeichnis.
+  printf '\n%sDatenbank angleichen%s\n' "$B" "$N"
+
+  push_log="$(mktemp)"
+
+  if pnpm exec prisma db push >"$push_log" 2>&1; then
+    if grep -q 'already in sync' "$push_log"; then
+      skip "Datenbank war schon auf Stand"
+    else
+      ok "Schema übernommen"
+    fi
+  elif grep -q 'Use the --accept-data-loss flag' "$push_log"; then
+    # Prisma verlangt eine Bestätigung. Sie gilt nicht nur echten
+    # Verlusten: Eine neu hinzukommende Eindeutigkeitssperre zählt
+    # auch dazu, obwohl sie nichts löscht — sie könnte nur an
+    # vorhandenen Dubletten scheitern.
+    printf '\n'
+    sed -n 's/^/     /p' "$push_log" | grep -A3 'data loss' || true
+    printf '\n'
+    warn "Prisma verlangt für die obige Änderung eine Bestätigung."
+
+    if [ -t 0 ]; then
+      read -r -p "     Übernehmen? [j/N]: " antwort </dev/tty
+      case "$antwort" in
+        j|J|y|Y)
+          pnpm exec prisma db push --accept-data-loss >"$push_log" 2>&1 \
+            && ok "Schema übernommen" \
+            || { sed -n 's/^/     /p' "$push_log"; die "Angleichen fehlgeschlagen."; }
+          ;;
+        *)
+          warn "Übersprungen. Das Panel läuft mit dem alten Schema weiter,"
+          warn "neue Felder bleiben leer. Nachholen mit:"
+          warn "  sudo $APP_DIR/deploy/update.sh"
+          ;;
+      esac
+    else
+      warn "Kein Terminal — bitte einmal von Hand ausführen:"
+      warn "  sudo $APP_DIR/deploy/update.sh"
+    fi
+  else
+    sed -n 's/^/     /p' "$push_log"
+    die "Angleichen fehlgeschlagen."
+  fi
+
+  rm -f "$push_log"
+
+  # Umstellungen, die dem Schema folgen. Jedes Skript prüft selbst, ob
+  # es schon gelaufen ist, und tut sonst nichts.
+  if [ -f "$APP_DIR/scripts/migrate-games.ts" ]; then
+    node "$APP_DIR/scripts/migrate-games.ts" --tun 2>&1 | sed 's/^/     /'
+  fi
+}
+
 printf '\n%sStand holen%s\n' "$B" "$N"
 before="$(git rev-parse HEAD)"
 git fetch --quiet origin "$BRANCH"
@@ -40,7 +105,10 @@ git reset --hard --quiet "origin/$BRANCH"
 after="$(git rev-parse HEAD)"
 
 if [ "$before" = "$after" ]; then
-  ok "Schon auf $(git rev-parse --short HEAD) — nichts zu tun."
+  ok "Schon auf $(git rev-parse --short HEAD) — Code unverändert."
+  # Trotzdem nachsehen: Ein Abgleich, der beim letzten Mal an einer
+  # Bestätigung hing, wäre sonst für immer offen.
+  datenbank_angleichen
   exit 0
 fi
 
@@ -61,23 +129,12 @@ fi
 if touched '^prisma/schema\.prisma$'; then
   pnpm db:generate >/dev/null
   ok "Prisma-Client erzeugt"
-  # Bewusst laut: db:push gleicht die Datenbank ans Schema an und kann
-  # dabei Spalten entfernen. Bei einer entfernten Spalte sind deren Daten
-  # weg, und niemand fragt vorher.
-  warn "Schema geändert — Datenbank angleichen mit: cd $APP_DIR && pnpm db:push"
-
-  # Seit der Spielauswahl gibt es eine Eindeutigkeitssperre auf
-  # (Node, Port). Prisma warnt davor, weil sie bei doppelten Werten
-  # fehlschlüge — löschen tut sie nichts.
-  if grep -q 'unique(\[nodeId, port\])' "$APP_DIR/prisma/schema.prisma" 2>/dev/null; then
-    warn "Dabei fragt Prisma nach --accept-data-loss: Das gilt der neuen"
-    warn "Portsperre und löscht nichts. Vollständig:"
-    warn "  pnpm exec prisma db push --accept-data-loss"
-    warn "Danach einmalig: node scripts/migrate-games.ts --tun"
-  fi
 else
   skip "Datenmodell unverändert"
 fi
+
+
+datenbank_angleichen
 
 pnpm build >/dev/null
 ok "Panel gebaut"
