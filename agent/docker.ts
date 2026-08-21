@@ -1,5 +1,6 @@
 import Docker from "dockerode";
 
+import { DEFAULT_GAME, findGame } from "../src/lib/games.ts";
 import { DockerLogDemuxer, LineAssembler } from "./logstream.ts";
 import { containerName } from "./naming.ts";
 import { withRcon } from "./rcon.ts";
@@ -32,6 +33,8 @@ export type ServerState = {
   rcon: { host: string; port: number } | null;
   /** Aus dem Container-Label — die Adresse, unter der mc-router ihn führt. */
   hostname: string | null;
+  /** Spiel aus dem Container-Label; null bei Containern von früher. */
+  game: string | null;
 };
 
 export class DockerLayer {
@@ -107,6 +110,7 @@ export class DockerLayer {
         startedAt: null,
         rcon: null,
         hostname: null,
+        game: null,
       };
     }
 
@@ -133,6 +137,7 @@ export class DockerLayer {
       startedAt: info.State.StartedAt ?? null,
       rcon: this.#rconTarget(info),
       hostname: info.Config?.Labels?.["mc-router.host"] ?? null,
+      game: info.Config?.Labels?.["saas.game"] ?? null,
     };
   }
 
@@ -201,6 +206,20 @@ export class DockerLayer {
     options: { timeoutMs?: number; rconPassword?: string } = {},
   ): Promise<{ ready: boolean; reason?: string }> {
     const timeoutMs = options.timeoutMs ?? 240_000;
+
+    // Der Log-Marker, auf den gewartet wird, steht so nur in
+    // Minecraft-Logs. Bei jedem anderen Spiel liefe das Warten in die
+    // volle Zeitgrenze und meldete dann einen Fehler für einen Server,
+    // der längst läuft. Dort zählt der laufende Container.
+    const state = await this.#container(serverId).inspect().catch(() => null);
+    const game = state?.Config?.Labels?.["saas.game"] ?? DEFAULT_GAME;
+
+    if (game !== DEFAULT_GAME) {
+      return state?.State.Running
+        ? { ready: true }
+        : { ready: false, reason: "Der Container läuft nicht." };
+    }
+
     const logResult = await this.#waitForReadyLog(serverId, timeoutMs);
 
     if (!logResult.ready) return logResult;
@@ -331,12 +350,29 @@ export class DockerLayer {
     });
   }
 
+  /**
+   * Ist der Server bereit für Spieler?
+   *
+   * Der Log-Marker, auf den das hier prüft, ist Minecraft-eigen. Für
+   * jedes andere Spiel gibt es keinen vergleichbaren Satz, den alle
+   * Images schreiben — dort gilt der laufende Container als das, was
+   * sich ehrlich sagen lässt. Lieber "läuft" als ein erfundenes
+   * "bereit", auf das sich niemand verlassen kann.
+   */
   async isReady(serverId: string): Promise<boolean> {
     const state = await this.#container(serverId)
       .inspect()
       .catch(() => null);
 
     if (!state?.State.Running) return false;
+
+    const game = state.Config?.Labels?.["saas.game"] ?? DEFAULT_GAME;
+
+    // Ein Spiel ohne Fernsteuerung kann nichts beantworten. Dann ist der
+    // laufende Container die einzige belastbare Aussage — und die wird
+    // hier gemacht, statt den Server für immer auf "startet" stehen zu
+    // lassen, obwohl längst jemand darauf spielt.
+    if (!findGame(game)?.rcon) return true;
 
     const target = this.#rconTarget(state);
     if (!target) return false;

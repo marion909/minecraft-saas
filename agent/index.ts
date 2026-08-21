@@ -6,6 +6,7 @@ import { loadConfig, type AgentConfig } from "./config.ts";
 import { DockerLayer } from "./docker.ts";
 import * as files from "./files.ts";
 import { collectHostInfo, powerHost } from "./host.ts";
+import { DEFAULT_GAME, gameOrThrow } from "../src/lib/games.ts";
 import {
   bearerToken,
   HttpError,
@@ -202,8 +203,27 @@ export function createAgent(config: AgentConfig) {
       throw new HttpError(409, "Für diese ID gibt es bereits einen Container.");
     }
 
+    // Fehlt die Angabe, ist es Minecraft — so sahen alle Anfragen aus,
+    // bevor es mehrere Spiele gab.
+    const gameId = (body as { game?: unknown })?.game;
+    const game = gameOrThrow(typeof gameId === "string" && gameId ? gameId : DEFAULT_GAME);
+
+    const portRaw = (body as { port?: unknown })?.port;
+    const port =
+      typeof portRaw === "number" && Number.isFinite(portRaw) ? portRaw : null;
+
+    if (game.routing === "port" && port === null) {
+      throw new HttpError(
+        400,
+        `${game.name} braucht einen eigenen Port — das Protokoll kennt ` +
+          `keinen Hostnamen, über den sich Server unterscheiden ließen.`,
+      );
+    }
+
     const spec: ServerSpec = {
       serverId,
+      game: game.id,
+      port,
       subdomain,
       serverType,
       mcVersion: field(body, "mcVersion"),
@@ -213,13 +233,17 @@ export function createAgent(config: AgentConfig) {
       rconPassword: field(body, "rconPassword"),
       hostname: field(body, "hostname"),
       dataPath: storage.path(serverId),
-      image: config.docker.image,
+      // Ein ausdrücklich gesetztes Image gilt nur für Minecraft; bei
+      // anderen Spielen käme sonst der Minecraft-Container heraus.
+      image: game.id === DEFAULT_GAME ? config.docker.image : undefined,
       network: config.docker.network,
       publishRcon: config.publishRcon,
     };
 
     const diskMb = numberField(body, "diskMb");
-    const image = config.docker.image ?? imageForVersion(spec.mcVersion);
+    const image =
+      spec.image ??
+      (game.id === DEFAULT_GAME ? imageForVersion(spec.mcVersion) : game.image);
 
     const task = tasks.start("server.provision", serverId, async (report) => {
       report("Netz prüfen");
@@ -234,8 +258,14 @@ export function createAgent(config: AgentConfig) {
       report("Container erstellen");
       await docker.create(spec);
 
-      report(`Route eintragen: ${spec.hostname}`);
-      await mcRouter.set(spec.hostname, backendFor(containerName(serverId)));
+      // Nur Minecraft läuft über den Router. Alles andere ist über
+      // seinen eigenen Port erreichbar und braucht keinen Eintrag.
+      if (game.routing === "hostname") {
+        report(`Route eintragen: ${spec.hostname}`);
+        await mcRouter.set(spec.hostname, backendFor(containerName(serverId)));
+      } else {
+        report(`Erreichbar über Port ${port}`);
+      }
 
       report("fertig");
     });

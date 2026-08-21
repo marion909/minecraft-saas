@@ -21,7 +21,7 @@ Downloads.
 | 05 | ZFS-Cache deckeln, damit er den JVMs keinen Speicher wegnimmt |
 | 06 | Docker, Log-Rotation, `live-restore`, Netz `mc-net` |
 | 07 | `vm.swappiness=1`, `vm.max_map_count`, Verbindungsgrenzen, 8 GB Auslagerungsdatei |
-| 08 | ufw: 22, 80, 443, 25565 — sonst nichts |
+| 08 | ufw: 22, 80, 443, 25565 und der Spiel-Portbereich — sonst nichts |
 | 09 | SSH auf Schlüssel umstellen (nur wenn einer hinterlegt ist), fail2ban |
 | 10 | Konten `mcagent` (Docker + ZFS) und `mcpanel`, `zfs allow` |
 | 11 | Repo nach `/opt/mc-saas/app`, Abhängigkeiten |
@@ -31,6 +31,22 @@ Downloads.
 | 15 | Schema schreiben, Node und Standardtarife anlegen |
 | 16 | Helfer nach `/usr/local/sbin`, sudo-Regeln, systemd-Dienste `mc-agent` und `mc-panel` |
 | 17 | Abnahme, inklusive Prüfung auf ungewollt offene Container-Ports |
+
+### Ports für die anderen Spiele
+
+Minecraft teilt sich 25565 über mc-router. Jedes andere Spiel unterscheidet
+Server nur am Port, bekommt also einen eigenen aus `GAME_PORT_START` bis
+`GAME_PORT_END` (Voreinstellung 27000–27099, TCP und UDP).
+
+Zwei Dinge kann das Skript nicht:
+
+**Portweiterleitung im Router.** Der Bereich muss auf diesen Host zeigen,
+sonst bleiben die Server im lokalen Netz. Bei Minecraft ist es der eine Port
+25565, hier sind es hundert.
+
+**DNS je Spiel.** Für jedes angebotene Spiel ein Wildcard auf die öffentliche
+IP — `*.cs2.example.com`, `*.valheim.example.com` und so weiter, alle ohne
+Cloudflare-Proxy. Die Liste steht im Panel unter Admin → Nodes.
 
 ### Platz für eingespielte Backups
 

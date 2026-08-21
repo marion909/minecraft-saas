@@ -10,6 +10,8 @@ import { ServerLog } from "@/components/server-log";
 import { ServerStats } from "@/components/server-stats";
 import { AgentClient } from "@/lib/agent";
 import { db } from "@/lib/db";
+import { findGame, serverAddress } from "@/lib/games";
+import { portsOf } from "@/lib/ports";
 import { isAdmin } from "@/lib/roles";
 import { requireUser } from "@/lib/session";
 import { syncServer } from "@/lib/server-sync";
@@ -42,13 +44,21 @@ export default async function ServerPage({
   }
 
   const live = await syncServer(server);
-  const address = `${server.subdomain}.${server.node.publicHost}`;
+  const game = findGame(server.game);
+  const address = game
+    ? serverAddress(game, server.subdomain, server.node.baseDomain, server.port)
+    : server.subdomain;
   const tone = STATUS_TONE[live.status];
 
   // Nur fragen, wenn es etwas zu erreichen gibt — sonst wartet die Seite
   // unnötig auf einen Ping, der ohnehin scheitert.
+  // Der Erreichbarkeitstest spricht das Minecraft-Protokoll. Für andere
+  // Spiele gibt es kein Gegenstück, das ohne eigenen Client auskäme —
+  // dort bleibt es beim Zustand des Containers.
   const reachability =
-    live.agentReachable && live.status === ServerStatus.RUNNING
+    game?.routing === "hostname" &&
+    live.agentReachable &&
+    live.status === ServerStatus.RUNNING
       ? await AgentClient.forNode(server.node)
           .ping(server.id)
           .catch(() => null)
@@ -127,12 +137,20 @@ export default async function ServerPage({
           <p className="notice notice-warn">
             Der Server läuft, ist unter dieser Adresse aber nicht erreichbar
             {reachability?.reason ? ` (${reachability.reason})` : ""}. Meist
-            fehlt der DNS-Eintrag für <code>*.{server.node.publicHost}</code>.
+            fehlt der DNS-Eintrag für <code>*.{game?.slug}.{server.node.baseDomain}</code>.
           </p>
         ) : (
           <p className="hint">
-            Diese Adresse tragen Spieler in Minecraft unter „Server hinzufügen“
-            ein. Sie antwortet, sobald der Server läuft.
+            Diese Adresse tragen Spieler im Spiel ein. Sie antwortet, sobald
+            der Server läuft.
+            {game && game.routing === "port" ? (
+              <>
+                {" "}
+                Der Port gehört dazu — {game.name} unterscheidet Server
+                ausschließlich daran. Er muss im Router auf diesen Host
+                weitergeleitet sein.
+              </>
+            ) : null}
           </p>
         )}
       </div>
@@ -174,6 +192,10 @@ export default async function ServerPage({
           <table>
             <tbody>
               <tr>
+                <th scope="row">Spiel</th>
+                <td>{game?.name ?? server.game}</td>
+              </tr>
+              <tr>
                 <th scope="row">Tarif</th>
                 <td>{server.plan.name}</td>
               </tr>
@@ -191,12 +213,22 @@ export default async function ServerPage({
                   {formatBytes(live.usedBytes)} von {server.appliedDiskMb} MB
                 </td>
               </tr>
-              <tr>
-                <th scope="row">Software</th>
-                <td>
-                  {server.serverType} {server.mcVersion}
-                </td>
-              </tr>
+              {game?.variants ? (
+                <tr>
+                  <th scope="row">Software</th>
+                  <td>
+                    {server.serverType} {server.mcVersion}
+                  </td>
+                </tr>
+              ) : null}
+              {server.port !== null ? (
+                <tr>
+                  <th scope="row">Port</th>
+                  <td className="num">
+                    {game ? portsOf(game, server.port).join(", ") : server.port}
+                  </td>
+                </tr>
+              ) : null}
               <tr>
                 <th scope="row">Angelegt</th>
                 <td>{server.createdAt.toLocaleDateString("de-DE")}</td>

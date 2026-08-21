@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Minecraft SaaS",
+  title: "Gaming Server SaaS",
   description: "Eigene Minecraft-Server auf Knopfdruck.",
 };
 

@@ -30,6 +30,12 @@ async function main() {
     agentUrl: process.env.AGENT_URL ?? "http://127.0.0.1:8787",
     agentToken: process.env.AGENT_TOKEN ?? "dev-token-bitte-ersetzen",
     publicHost: process.env.NODE_PUBLIC_HOST ?? "mc.localhost",
+    // Basis ohne Spielsegment — das setzt der Katalog davor.
+    baseDomain:
+      process.env.NODE_BASE_DOMAIN ??
+      (process.env.NODE_PUBLIC_HOST ?? "mc.localhost").replace(/^mc\./, ""),
+    portRangeStart: num("NODE_PORT_RANGE_START", 27_000),
+    portRangeEnd: num("NODE_PORT_RANGE_END", 27_099),
     totalMemoryMb: num("NODE_TOTAL_MEMORY_MB", 49_152),
     totalCpuCores: num("NODE_TOTAL_CPU_CORES", 12),
     totalDiskMb: num("NODE_TOTAL_DISK_MB", 953_000),

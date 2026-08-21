@@ -13,7 +13,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       <header className="topbar">
         <div className="topbar-inner">
           <Link className="brand" href="/dashboard">
-            Minecraft SaaS
+            Gaming Server SaaS
           </Link>
 
           <Link className="navlink" href="/dashboard">

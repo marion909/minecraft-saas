@@ -34,6 +34,11 @@ ENV_FILE="$APP_DIR/.env"
 DATA_ROOT="/srv/mc"
 BACKUP_ROOT="/srv/backups"
 ZFS_POOL="${ZFS_POOL:-tank}"
+# Portbereich für alle Spiele außer Minecraft. Minecraft teilt sich 25565
+# über mc-router; jedes andere Spiel unterscheidet Server nur am Port und
+# bekommt deshalb einen eigenen aus diesem Bereich.
+GAME_PORT_START="${GAME_PORT_START:-27000}"
+GAME_PORT_END="${GAME_PORT_END:-27099}"
 NODE_MAJOR="${NODE_MAJOR:-24}"
 ASSUME_YES="${ASSUME_YES:-0}"
 
@@ -143,9 +148,16 @@ gather_config() {
 
   cat <<EOF
 
-     ${D}Dafür müssen zwei DNS-Einträge auf die öffentliche IP dieses Hosts zeigen:
+     ${D}Dafür müssen diese DNS-Einträge auf die öffentliche IP dieses Hosts zeigen:
        $PANEL_HOST        A
-       *.$MC_HOST         A${N}
+       *.$MC_HOST         A   (Minecraft)
+
+     Für jedes weitere Spiel ein eigener Wildcard, z. B.
+       *.cs2.$DOMAIN      A   (Counter-Strike 2)
+       *.valheim.$DOMAIN  A   (Valheim)
+
+     Alle ohne Cloudflare-Proxy — Spiele sprechen kein HTTP.
+     Die vollständige Liste zeigt das Panel unter Admin → Nodes.${N}
 EOF
 }
 
@@ -525,9 +537,18 @@ setup_firewall() {
   ufw allow 80/tcp    >/dev/null   # ACME und Weiterleitung
   ufw allow 443/tcp   >/dev/null   # Panel
   ufw allow 25565/tcp >/dev/null   # Minecraft über mc-router
+
+  # Alles außer Minecraft unterscheidet Server am Port, nicht am
+  # Hostnamen — jeder Server bekommt einen eigenen aus diesem Bereich.
+  # TCP und UDP, weil beides vorkommt: Source-Spiele und Valheim laufen
+  # über UDP, Terraria über TCP.
+  ufw allow "${GAME_PORT_START}:${GAME_PORT_END}/tcp" >/dev/null
+  ufw allow "${GAME_PORT_START}:${GAME_PORT_END}/udp" >/dev/null
+
   ufw --force enable  >/dev/null
 
-  ok "Offen: 22, 80, 443, 25565"
+  ok "Offen: 22, 80, 443, 25565, ${GAME_PORT_START}-${GAME_PORT_END} (TCP+UDP)"
+  warn "Der Portbereich muss zusätzlich im Router auf diesen Host weitergeleitet sein — sonst sind alle Spiele außer Minecraft nur im lokalen Netz erreichbar."
   warn "Docker schreibt eigene iptables-Regeln an ufw vorbei. Nach jedem Compose-Umbau prüfen: docker ps --format '{{.Names}} {{.Ports}}' — außer mc-router darf nirgends 0.0.0.0 stehen."
 }
 
@@ -674,6 +695,11 @@ NODE_TOTAL_DISK_MB=${pool_mb}
 NODE_RESERVED_MEMORY_MB=${reserved_mb}
 NODE_RESERVED_DISK_MB=${reserved_disk_mb}
 NODE_PUBLIC_HOST="${MC_HOST}"
+# Basis aller Serveradressen. Das Spielsegment kommt aus dem Katalog
+# davor: <server>.mc.<basis>, <server>.cs2.<basis> und so weiter.
+NODE_BASE_DOMAIN="${DOMAIN}"
+NODE_PORT_RANGE_START="${GAME_PORT_START}"
+NODE_PORT_RANGE_END="${GAME_PORT_END}"
 EOF
 
   chown root:mcsaas "$ENV_FILE"

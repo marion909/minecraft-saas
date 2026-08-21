@@ -164,8 +164,26 @@ model Node {
   // Interne Adresse des Agents, z. B. http://127.0.0.1:8787
   agentUrl   String
   agentToken String
-  // Öffentlicher Hostname, unter dem die Server erreichbar sind.
-  publicHost String
+
+  // Veraltet: war der vollständige Wildcard-Name für Minecraft
+  // ("mc.example.com"). Seit es mehrere Spiele gibt, steckt das Segment
+  // im Spielkatalog und hier nur noch die Basis. Wird beim nächsten
+  // Aufräumen entfernt; solange bleibt es stehen, damit ein `db push`
+  // keine Daten wegwirft. Neue Nodes lassen es leer.
+  publicHost String @default("")
+
+  // Basis für alle Serveradressen: <server>.<spiel>.<basis>, also etwa
+  // welt.mc.example.com und mixe.cs2.example.com. Für jedes angebotene
+  // Spiel braucht es einen eigenen Wildcard-Eintrag im DNS.
+  baseDomain String @default("")
+
+  // Portbereich für Spiele ohne Hostname-Routing. Minecraft braucht das
+  // nicht — dort teilen sich alle Server 25565 und mc-router verteilt am
+  // Namen. Bei allem anderen unterscheidet nur der Port, also bekommt
+  // jeder Server einen eigenen aus diesem Bereich. Er muss in der
+  // Firewall offen und im Router weitergeleitet sein.
+  portRangeStart Int @default(27000)
+  portRangeEnd   Int @default(27099)
 
   totalMemoryMb Int
   totalCpuCores Float
@@ -201,11 +219,25 @@ model Server {
   id   String @id @default(cuid())
   name String
 
-  // Wird zu <subdomain>.<node.publicHost>, geroutet über mc-router.
+  // Welches Spiel — der Schlüssel aus src/lib/games.ts. Bewusst Freitext
+  // statt Enum: Ein neues Spiel soll ein Katalogeintrag sein und keine
+  // Datenbankmigration.
+  game String @default("minecraft")
+
+  // Wird zu <subdomain>.<spiel>.<node.baseDomain>. Bei Minecraft routet
+  // mc-router am Namen, sonst am Port.
   subdomain String @unique
 
+  // Zugeteilter Host-Port bei Spielen ohne Hostname-Routing. Null bei
+  // Minecraft, das ohne eigenen Port auskommt. Der Server belegt ihn und
+  // je nach Spiel die darauf folgenden.
+  port Int?
+
   status     ServerStatus @default(PROVISIONING)
+  // Nur bei Minecraft von Bedeutung: Paper, Vanilla, Fabric … Andere
+  // Spiele kennen keine solchen Varianten und lassen den Wert stehen.
   serverType ServerType   @default(PAPER)
+  // Spielversion. Bei Minecraft etwa "1.21", sonst meist "LATEST".
   mcVersion  String
 
   containerId String?
@@ -245,6 +277,14 @@ model Server {
 
   @@index([userId])
   @@index([nodeId, status])
+  // Zwei Server auf demselben Port heißt: Der zweite startet nicht, und
+  // fremde Spieler landen beim ersten. Die Anwendung sucht sich einen
+  // freien Port, aber zwischen Suchen und Schreiben liegt Zeit — deshalb
+  // hier die Sperre, die auch bei gleichzeitigem Anlegen hält. Minecraft
+  // hat keinen eigenen Port; die vielen NULL-Werte stören nicht, weil
+  // Postgres NULL nie als gleich ansieht.
+  @@unique([nodeId, port])
+  @@index([nodeId, port])
   @@map("server")
 }
 

@@ -9,6 +9,13 @@ import { ServerStatus, ServerType } from "@/generated/prisma/enums";
 import { AgentClient, AgentError } from "@/lib/agent";
 import { audit } from "@/lib/audit";
 import { placeServer } from "@/lib/capacity";
+import {
+  DEFAULT_GAME,
+  findGame,
+  serverAddress,
+  serverHostname,
+} from "@/lib/games";
+import { allocatePort, blockSize, portsOf } from "@/lib/ports";
 import { db } from "@/lib/db";
 import { isAdmin } from "@/lib/roles";
 import { checkServerName } from "@/lib/server-name";
@@ -100,6 +107,34 @@ export async function checkAddressAvailable(
     : { state: "frei" };
 }
 
+/**
+ * Wie die Adresse am Ende aussieht — für die Vorschau, während getippt
+ * wird. Das Spielsegment und die Basis kommen vom Node, den Port kennt
+ * erst das Anlegen; hier steht deshalb der Standardport des Spiels.
+ */
+export async function previewAddress(
+  gameId: string,
+  subdomain: string,
+): Promise<{ address: string; routing: "hostname" | "port" } | null> {
+  await requireUser();
+
+  const game = findGame(gameId);
+  if (!game) return null;
+
+  const node = await db.node.findFirst({
+    where: { status: "ONLINE" },
+    select: { baseDomain: true },
+  });
+
+  const basis = node?.baseDomain || "example.com";
+  const name = subdomain.trim().toLowerCase() || "deinserver";
+
+  return {
+    address: serverAddress(game, name, basis, null),
+    routing: game.routing,
+  };
+}
+
 export async function createServer(
   _previous: ServerFormState,
   formData: FormData,
@@ -107,10 +142,14 @@ export async function createServer(
   const session = await requireUser();
 
   const planId = String(formData.get("planId") ?? "");
+  const gameId = String(formData.get("game") ?? "").trim() || DEFAULT_GAME;
   const serverType = String(formData.get("serverType") ?? "");
   const mcVersion = String(formData.get("mcVersion") ?? "").trim() || "LATEST";
 
   const fields: Record<string, string> = {};
+
+  const game = findGame(gameId);
+  if (!game) fields.game = "Dieses Spiel gibt es nicht.";
 
   const parsedName = checkServerName(String(formData.get("name") ?? ""));
   if (!parsedName.ok) fields.name = parsedName.reason;
@@ -118,7 +157,10 @@ export async function createServer(
   const subdomain = checkSubdomain(String(formData.get("subdomain") ?? ""));
   if (!subdomain.ok) fields.subdomain = subdomain.reason;
 
-  if (!SERVER_TYPES.includes(serverType as ServerType)) {
+  // Die Variante gibt es nur bei Spielen, die welche kennen — bei
+  // Minecraft Paper, Vanilla und so weiter. Für Valheim wäre die Frage
+  // sinnlos, und ein Pflichtfeld dafür würde das Anlegen blockieren.
+  if (game?.variants && !SERVER_TYPES.includes(serverType as ServerType)) {
     fields.serverType = "Unbekannte Server-Software.";
   }
 
@@ -127,9 +169,26 @@ export async function createServer(
     fields.planId = "Diesen Tarif gibt es nicht.";
   } else if (!plan.isPublic && !isAdmin(session.user.role)) {
     fields.planId = "Dieser Tarif ist nicht buchbar.";
+  } else if (game && plan.memoryMb < game.minMemoryMb) {
+    // Lieber hier ablehnen als den Server anlegen und zusehen, wie er
+    // beim Start am Arbeitsspeicher scheitert.
+    fields.planId =
+      `${game.name} braucht mindestens ${game.minMemoryMb} MB, ` +
+      `„${plan.name}“ bietet ${plan.memoryMb} MB.`;
+  } else if (game && plan.diskMb < game.installMb) {
+    fields.planId =
+      `${game.name} belegt allein für die Installation rund ` +
+      `${Math.round(game.installMb / 1024)} GB, „${plan.name}“ hat ` +
+      `${Math.round(plan.diskMb / 1024)} GB.`;
   }
 
-  if (Object.keys(fields).length > 0 || !plan || !subdomain.ok || !parsedName.ok) {
+  if (
+    Object.keys(fields).length > 0 ||
+    !plan ||
+    !game ||
+    !subdomain.ok ||
+    !parsedName.ok
+  ) {
     return { fields };
   }
 
@@ -200,31 +259,88 @@ export async function createServer(
 
   const node = placement.node;
 
+  // Minecraft braucht keinen eigenen Port: Alle Server hängen an 25565,
+  // mc-router verteilt sie am Hostnamen aus dem Handshake. Jedes andere
+  // Spiel kennt kein solches Feld im Protokoll — dort unterscheidet nur
+  // der Port, also bekommt jeder Server einen eigenen.
+  let port: number | null = null;
+
+  if (game.routing === "port") {
+    const vergeben = await db.server.findMany({
+      where: { nodeId: node.id, port: { not: null } },
+      select: { port: true, game: true },
+    });
+
+    // Nicht nur den zugeteilten Port sperren, sondern den ganzen Block:
+    // Valheim belegt zwei aufeinanderfolgende, Rust ebenso. Wer nur den
+    // ersten zählt, vergibt den zweiten ein zweites Mal.
+    const belegt = vergeben.flatMap((eintrag) => {
+      const anderes = findGame(eintrag.game);
+      return anderes && eintrag.port !== null
+        ? portsOf(anderes, eintrag.port)
+        : [];
+    });
+
+    const zuteilung = allocatePort(
+      belegt,
+      { start: node.portRangeStart, end: node.portRangeEnd },
+      blockSize(game),
+    );
+
+    if (!zuteilung.ok) {
+      return { error: `Kein freier Port auf diesem Node. ${zuteilung.reason}` };
+    }
+
+    port = zuteilung.port;
+  }
+
   // Bleibt serverseitig — das Panel schickt Befehle, nie Zugangsdaten.
   const rconPassword = randomBytes(24).toString("base64url");
 
-  const server = await db.server.create({
-    data: {
-      name,
-      subdomain: subdomain.value,
-      serverType: serverType as ServerType,
-      mcVersion,
-      status: ServerStatus.PROVISIONING,
-      rconPassword,
-      appliedMemoryMb: plan.memoryMb,
-      appliedCpuCores: plan.cpuCores,
-      appliedDiskMb: plan.diskMb,
-      userId: session.user.id,
-      nodeId: node.id,
-      planId: plan.id,
-    },
-  });
+  let server;
 
-  const hostname = `${subdomain.value}.${node.publicHost}`;
+  try {
+    server = await db.server.create({
+      data: {
+        name,
+        game: game.id,
+        port,
+        subdomain: subdomain.value,
+        serverType: serverType as ServerType,
+        mcVersion,
+        status: ServerStatus.PROVISIONING,
+        rconPassword,
+        appliedMemoryMb: plan.memoryMb,
+        appliedCpuCores: plan.cpuCores,
+        appliedDiskMb: plan.diskMb,
+        userId: session.user.id,
+        nodeId: node.id,
+        planId: plan.id,
+      },
+    });
+  } catch (error) {
+    // Zwischen der Portsuche oben und diesem Schreiben kann jemand
+    // anders denselben genommen haben. Die Datenbank fängt das ab; hier
+    // wird daraus ein Satz statt eines Constraint-Fehlers.
+    const meldung = error instanceof Error ? error.message : String(error);
+
+    if (meldung.includes("nodeId") && meldung.includes("port")) {
+      return {
+        error:
+          "Der Port wurde gerade von einem anderen Server belegt. " +
+          "Bitte noch einmal versuchen.",
+      };
+    }
+    throw error;
+  }
+
+  const hostname = serverHostname(game, subdomain.value, node.baseDomain);
 
   try {
     const { task } = await AgentClient.forNode(node).createServer({
       serverId: server.id,
+      game: game.id,
+      port,
       subdomain: subdomain.value,
       serverType,
       mcVersion,
@@ -268,7 +384,7 @@ export async function createServer(
     action: "server.created",
     userId: session.user.id,
     serverId: server.id,
-    meta: { plan: plan.slug, hostname, serverType, mcVersion },
+    meta: { plan: plan.slug, game: game.id, hostname, port, serverType, mcVersion },
   });
 
   revalidatePath("/dashboard");

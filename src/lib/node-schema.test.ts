@@ -10,7 +10,9 @@ function gültig(overrides: Record<string, string> = {}): FormData {
     name: "hetzner-1",
     agentUrl: "http://127.0.0.1:8787",
     agentToken: "0123456789abcdef0123",
-    publicHost: "mc.neuhauser.app",
+    baseDomain: "neuhauser.app",
+    portRangeStart: "27000",
+    portRangeEnd: "27099",
     totalMemoryMb: "65536",
     totalCpuCores: "16",
     totalDiskMb: "900000",
@@ -77,10 +79,10 @@ describe("nodeInput", () => {
     });
   });
 
-  describe("publicHost", () => {
+  describe("baseDomain", () => {
     it("nimmt gewöhnliche Namen an", () => {
       for (const host of ["mc.neuhauser.app", "spiel.example.co.uk", "a.de"]) {
-        assert.equal(nodeInputFromForm(gültig({ publicHost: host })).success, true, host);
+        assert.equal(nodeInputFromForm(gültig({ baseDomain: host })).success, true, host);
       }
     });
 
@@ -90,25 +92,25 @@ describe("nodeInput", () => {
         "mc.example.com:25565",
         "mc.example.com/pfad",
       ]) {
-        assert.ok(fehlerBei({ publicHost: host }).publicHost, host);
+        assert.ok(fehlerBei({ baseDomain: host }).baseDomain, host);
       }
     });
 
     it("verlangt einen Punkt", () => {
       // Ohne Punkt entstünde als Serveradresse "meinserver.localhost" —
       // das löst kein Client außerhalb des Hosts auf.
-      assert.ok(fehlerBei({ publicHost: "localhost" }).publicHost);
+      assert.ok(fehlerBei({ baseDomain: "localhost" }).baseDomain);
     });
 
     it("weist führende und schließende Bindestriche ab", () => {
       for (const host of ["-mc.example.com", "mc-.example.com", "mc.-example.com"]) {
-        assert.ok(fehlerBei({ publicHost: host }).publicHost, host);
+        assert.ok(fehlerBei({ baseDomain: host }).baseDomain, host);
       }
     });
 
     it("schreibt klein", () => {
-      const parsed = nodeInputFromForm(gültig({ publicHost: "MC.Example.COM" }));
-      assert.equal(parsed.data?.publicHost, "mc.example.com");
+      const parsed = nodeInputFromForm(gültig({ baseDomain: "MC.Example.COM" }));
+      assert.equal(parsed.data?.baseDomain, "mc.example.com");
     });
   });
 
@@ -147,6 +149,61 @@ describe("nodeInput", () => {
 
     it("weist Werte über 8 ab", () => {
       assert.ok(fehlerBei({ cpuOvercommit: "16" }).cpuOvercommit);
+    });
+  });
+
+  describe("Portbereich", () => {
+    it("nimmt einen gewöhnlichen Bereich an", () => {
+      assert.equal(
+        nodeInputFromForm(gültig({ portRangeStart: "27000", portRangeEnd: "27099" })).success,
+        true,
+      );
+    });
+
+    it("weist einen Bereich ab, der 25565 enthält", () => {
+      // Der gehört mc-router. Bekäme ihn ein Valheim-Server zugeteilt,
+      // wären mit einem Schlag alle Minecraft-Server unerreichbar.
+      const fälle: [string, string][] = [
+        ["25000", "26000"],
+        ["25565", "25600"],
+        ["25000", "25565"],
+      ];
+
+      for (const [start, ende] of fälle) {
+        const fehler = fehlerBei({ portRangeStart: start, portRangeEnd: ende });
+        assert.match(fehler.portRangeStart ?? "", /25565/, `${start}-${ende}`);
+      }
+    });
+
+    it("lässt Bereiche knapp daneben zu", () => {
+      const fälle: [string, string][] = [
+        ["25000", "25564"],
+        ["25566", "26000"],
+      ];
+
+      for (const [start, ende] of fälle) {
+        assert.equal(
+          nodeInputFromForm(gültig({ portRangeStart: start, portRangeEnd: ende })).success,
+          true,
+          `${start}-${ende}`,
+        );
+      }
+    });
+
+    it("weist einen verkehrt herum eingetragenen Bereich ab", () => {
+      assert.ok(fehlerBei({ portRangeStart: "27100", portRangeEnd: "27000" }).portRangeEnd);
+    });
+
+    it("weist einen zu kleinen Bereich ab", () => {
+      assert.match(
+        fehlerBei({ portRangeStart: "27000", portRangeEnd: "27005" }).portRangeEnd ?? "",
+        /zehn Ports/,
+      );
+    });
+
+    it("weist privilegierte Ports ab", () => {
+      // Unter 1024 darf ein Container ohne Sonderrechte nicht binden.
+      assert.ok(fehlerBei({ portRangeStart: "80", portRangeEnd: "1000" }).portRangeStart);
     });
   });
 

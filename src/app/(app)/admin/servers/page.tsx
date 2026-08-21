@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { ServerStatus } from "@/generated/prisma/enums";
 import { db } from "@/lib/db";
+import { findGame, serverAddress } from "@/lib/games";
 import { requireAdmin } from "@/lib/session";
 import { formatMb, STATUS_LABEL, STATUS_TONE } from "@/lib/status-label";
 
@@ -46,7 +47,7 @@ export default async function AdminServersPage({
     orderBy: { createdAt: "desc" },
     include: {
       user: { select: { id: true, name: true, email: true } },
-      node: { select: { name: true, publicHost: true } },
+      node: { select: { name: true, baseDomain: true } },
       plan: { select: { name: true } },
       _count: { select: { backups: true } },
     },
@@ -147,7 +148,12 @@ export default async function AdminServersPage({
                       </Link>
                       <br />
                       <code>
-                        {server.subdomain}.{server.node.publicHost}
+                        {(() => {
+                          const game = findGame(server.game);
+                          return game
+                            ? serverAddress(game, server.subdomain, server.node.baseDomain, server.port)
+                            : server.subdomain;
+                        })()}
                       </code>
                     </td>
                     <td>
@@ -170,7 +176,7 @@ export default async function AdminServersPage({
                       {server.plan.name}
                       <br />
                       <span className="hint">
-                        {server.serverType} {server.mcVersion}
+                        {findGame(server.game)?.name ?? server.game}
                       </span>
                     </td>
                     <td className="num">{formatMb(server.appliedMemoryMb)}</td>

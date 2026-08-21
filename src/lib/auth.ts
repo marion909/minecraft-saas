@@ -8,7 +8,7 @@ import { sendMail } from "./mail";
 import { ROLES } from "./roles";
 
 export const auth = betterAuth({
-  appName: "Minecraft SaaS",
+  appName: "Gaming Server SaaS",
   database: prismaAdapter(db, { provider: "postgresql" }),
   secret: env.BETTER_AUTH_SECRET,
   baseURL: env.BETTER_AUTH_URL,

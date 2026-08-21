@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { DeleteNodeButton } from "@/components/delete-node-button";
 import { NodeForm } from "@/components/node-form";
 import { db } from "@/lib/db";
+import { findGame } from "@/lib/games";
 import { requireAdmin } from "@/lib/session";
 import { STATUS_LABEL, STATUS_TONE } from "@/lib/status-label";
 
@@ -53,7 +54,9 @@ export default async function EditNodePage({
           defaults={{
             name: node.name,
             agentUrl: node.agentUrl,
-            publicHost: node.publicHost,
+            baseDomain: node.baseDomain,
+            portRangeStart: node.portRangeStart,
+            portRangeEnd: node.portRangeEnd,
             totalMemoryMb: node.totalMemoryMb,
             totalCpuCores: node.totalCpuCores,
             totalDiskMb: node.totalDiskMb,
@@ -90,7 +93,8 @@ export default async function EditNodePage({
                       <Link href={`/servers/${server.id}`}>{server.name}</Link>
                       <br />
                       <code>
-                        {server.subdomain}.{node.publicHost}
+                        {server.subdomain}.{findGame(server.game)?.slug ?? "?"}.
+                        {node.baseDomain}
                       </code>
                     </td>
                     <td>{server.user.name}</td>

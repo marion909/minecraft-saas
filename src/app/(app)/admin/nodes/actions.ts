@@ -138,7 +138,7 @@ export async function createNode(
     meta: {
       nodeId: node.id,
       name: node.name,
-      publicHost: node.publicHost,
+      baseDomain: node.baseDomain,
       agentUrl: node.agentUrl,
     },
   });
@@ -299,7 +299,7 @@ export async function deleteNode(
   await audit({
     action: "node.deleted",
     userId: session.user.id,
-    meta: { nodeId, name: node.name, publicHost: node.publicHost },
+    meta: { nodeId, name: node.name, baseDomain: node.baseDomain },
   });
 
   revalidatePath("/admin/nodes");

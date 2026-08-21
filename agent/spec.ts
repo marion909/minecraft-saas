@@ -1,6 +1,8 @@
 import type Docker from "dockerode";
 
 import { heapForContainer } from "../src/lib/capacity.ts";
+import { DEFAULT_GAME, gameOrThrow, type Game } from "../src/lib/games.ts";
+import { portMappings } from "../src/lib/ports.ts";
 import { imageForVersion } from "./java.ts";
 import { containerName } from "./naming.ts";
 
@@ -8,6 +10,13 @@ export type ServerType = "VANILLA" | "PAPER" | "PURPUR" | "FABRIC" | "FORGE";
 
 export type ServerSpec = {
   serverId: string;
+  /** Schlüssel aus dem Spielkatalog. Fehlt er, ist es Minecraft. */
+  game?: string;
+  /**
+   * Zugeteilter Host-Port. Null bei Minecraft, das sich den Router-Port
+   * mit allen anderen teilt.
+   */
+  port?: number | null;
   subdomain: string;
   serverType: ServerType;
   mcVersion: string;
@@ -46,43 +55,79 @@ export const CONTAINER_GID = 1000;
 export function buildContainerOptions(
   spec: ServerSpec,
 ): Docker.ContainerCreateOptions {
-  const heapMb = heapForContainer(spec.memoryMb);
+  const game = gameOrThrow(spec.game ?? DEFAULT_GAME);
+  const istMinecraft = game.id === DEFAULT_GAME;
+
+  const heapMb = istMinecraft ? heapForContainer(spec.memoryMb) : 0;
   const memoryBytes = spec.memoryMb * 1024 * 1024;
+
+  // Bei Minecraft hängt das Image an der Spielversion, weil die Java-
+  // Version dazu passen muss. Jedes andere Spiel bringt sein eigenes mit.
+  const image =
+    spec.image ??
+    (istMinecraft ? imageForVersion(spec.mcVersion) : game.image);
+
+  // Nur Spiele ohne Hostname-Routing veröffentlichen Ports nach außen.
+  // Bei Minecraft bleibt der Container unerreichbar, Spieler kommen
+  // ausschließlich über mc-router herein.
+  const veröffentlicht =
+    game.routing === "port" && spec.port ? portMappings(game, spec.port) : [];
+
+  const exposed: Record<string, Record<string, never>> = {};
+  const bindings: Record<string, { HostPort: string }[]> = {};
+
+  for (const mapping of veröffentlicht) {
+    const schlüssel = `${mapping.containerPort}/${mapping.transport}`;
+    exposed[schlüssel] = {};
+    bindings[schlüssel] = [{ HostPort: String(mapping.hostPort) }];
+  }
 
   return {
     name: containerName(spec.serverId),
-    // Ohne passendes Java startet der Server nicht. Ein ausdrücklich
-    // gesetztes Image gewinnt, sonst wird es aus der Version abgeleitet.
-    Image: spec.image ?? imageForVersion(spec.mcVersion),
+    Image: image,
 
     Labels: {
       "saas.managed": "true",
       "saas.serverId": spec.serverId,
+      "saas.game": game.id,
       // mc-router kann Routen auch per Label entdecken; wir setzen sie
       // zusätzlich über die REST-API, damit ein Router-Neustart ohne
-      // Docker-Socket auskommt.
-      "mc-router.host": spec.hostname,
+      // Docker-Socket auskommt. Nur Minecraft wird so geroutet.
+      ...(istMinecraft ? { "mc-router.host": spec.hostname } : {}),
     },
 
-    Env: buildEnv(spec, heapMb),
+    Env: istMinecraft ? buildEnv(spec, heapMb) : buildGameEnv(spec, game),
 
     // Gehört auf die Container-Ebene, nicht in HostConfig: Die Welt muss
     // beim Stoppen gespeichert werden dürfen.
     StopTimeout: 120,
 
-    // Der Spielport wird nie veröffentlicht — Spieler kommen ausschließlich
-    // über mc-router herein. Nur RCON kann in der Entwicklung auf einen
-    // zufälligen localhost-Port gelegt werden.
-    ...(spec.publishRcon ? { ExposedPorts: { "25575/tcp": {} } } : {}),
+    // Nur setzen, wenn wirklich etwas veröffentlicht wird. Ein leeres
+    // Objekt wäre gleichbedeutend, aber der Container-Bauplan soll für
+    // Minecraft Zeichen für Zeichen der alte bleiben.
+    ...(Object.keys(exposed).length > 0 || spec.publishRcon
+      ? {
+          ExposedPorts: {
+            ...exposed,
+            // RCON kann in der Entwicklung auf einen zufälligen
+            // localhost-Port gelegt werden; in Produktion bleibt es im
+            // Bridge-Netz. Ein offener RCON-Port ist eine Fernsteuerung.
+            ...(spec.publishRcon ? { "25575/tcp": {} } : {}),
+          },
+        }
+      : {}),
 
     HostConfig: {
       NetworkMode: spec.network ?? DEFAULT_NETWORK,
       Binds: [`${spec.dataPath}:/data`],
 
-      ...(spec.publishRcon
+      ...(Object.keys(bindings).length > 0 || spec.publishRcon
         ? {
             PortBindings: {
-              "25575/tcp": [{ HostIp: "127.0.0.1", HostPort: "0" }],
+              ...bindings,
+              ...(spec.publishRcon
+                ? { "25575/tcp": [{ HostIp: "127.0.0.1", HostPort: "0" }] }
+                : {}),
             },
           }
         : {}),
@@ -152,6 +197,53 @@ function buildEnv(spec: ServerSpec, heapMb: number): string[] {
     // Gibt Spielern beim Herunterfahren eine Vorwarnung.
     STOP_SERVER_ANNOUNCE_DELAY: "10",
   };
+
+  return Object.entries(env).map(([key, value]) => `${key}=${value}`);
+}
+
+/**
+ * Umgebung für alle Spiele außer Minecraft.
+ *
+ * Bewusst schmal gehalten. Die Images unterscheiden sich stark in dem,
+ * was sie erwarten — was hier steht, ist der kleinste gemeinsame Nenner
+ * aus Servername, Spieleranzahl und Fernsteuerung. Alles Weitere
+ * konfiguriert der Betreiber über den Dateimanager, so wie er es auch
+ * bei einem selbst aufgesetzten Server täte.
+ *
+ * Die Namen der Variablen sind je Image verschieden; deshalb werden
+ * gängige Schreibweisen nebeneinander gesetzt. Was ein Image nicht
+ * kennt, ignoriert es.
+ */
+function buildGameEnv(spec: ServerSpec, game: Game): string[] {
+  const env: Record<string, string> = {
+    // Steam-Images lehnen ohne Zustimmung den Start ab.
+    STEAMAPPVALIDATE: "1",
+
+    SERVER_NAME: spec.subdomain,
+    SERVERNAME: spec.subdomain,
+    NAME: spec.subdomain,
+
+    MAX_PLAYERS: String(spec.maxPlayers),
+    MAXPLAYERS: String(spec.maxPlayers),
+
+    PORT: String(game.gamePort),
+    GAME_PORT: String(game.gamePort),
+
+    TZ: "Europe/Vienna",
+
+    // Dieselbe UID wie bei Minecraft, damit das Datenverzeichnis für
+    // alle Spiele gleich behandelt werden kann.
+    PUID: String(CONTAINER_UID),
+    PGID: String(CONTAINER_GID),
+    UID: String(CONTAINER_UID),
+    GID: String(CONTAINER_GID),
+  };
+
+  if (game.rcon) {
+    env.RCON_PASSWORD = spec.rconPassword;
+    env.RCON_PORT = "27020";
+    env.ENABLE_RCON = "true";
+  }
 
   return Object.entries(env).map(([key, value]) => `${key}=${value}`);
 }

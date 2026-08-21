@@ -10,6 +10,8 @@ import {
   type ServerFormState,
 } from "@/app/(app)/servers/actions";
 
+import { GAMES, DEFAULT_GAME, findGame } from "@/lib/games";
+
 import {
   blocks,
   useAvailability,
@@ -61,20 +63,13 @@ export type PlanChoice = {
   slots: number;
 };
 
-const SOFTWARE = [
-  { value: "PAPER", label: "Paper", hint: "Empfohlen. Schnell, Plugin-fähig." },
-  { value: "VANILLA", label: "Vanilla", hint: "Original ohne Erweiterungen." },
-  { value: "PURPUR", label: "Purpur", hint: "Paper mit mehr Stellschrauben." },
-  { value: "FABRIC", label: "Fabric", hint: "Für Fabric-Mods." },
-  { value: "FORGE", label: "Forge", hint: "Für Forge-Modpacks." },
-];
-
 export function CreateServerForm({
   plans,
-  publicHost,
+  baseDomain,
 }: {
   plans: PlanChoice[];
-  publicHost: string;
+  /** Basis aller Adressen; das Spielsegment kommt aus dem Katalog. */
+  baseDomain: string;
 }) {
   const [state, formAction, pending] = useActionState<ServerFormState, FormData>(
     createServer,
@@ -83,6 +78,13 @@ export function CreateServerForm({
   const [name, setName] = useState("");
   const [subdomain, setSubdomain] = useState("");
   const [planId, setPlanId] = useState(plans.find((p) => p.slots > 0)?.id ?? "");
+  const [gameId, setGameId] = useState(DEFAULT_GAME);
+
+  const game = findGame(gameId) ?? findGame(DEFAULT_GAME)!;
+
+  // Die Adresse entsteht aus dem gewählten Spiel — das ist der Grund,
+  // warum die Auswahl ganz oben steht und nicht bei der Software.
+  const suffix = `.${game.slug}.${baseDomain}`;
 
   const nameState = useAvailability(name, checkNameAvailable);
   const addressState = useAvailability(subdomain, checkAddressAvailable);
@@ -90,6 +92,39 @@ export function CreateServerForm({
   return (
     <form className="stack" action={formAction}>
       {state.error ? <p className="notice notice-error">{state.error}</p> : null}
+
+      <div className="field">
+        <label htmlFor="game">Spiel</label>
+        <select
+          id="game"
+          name="game"
+          value={gameId}
+          onChange={(event) => setGameId(event.target.value)}
+        >
+          {GAMES.map((eintrag) => (
+            <option key={eintrag.id} value={eintrag.id}>
+              {eintrag.name}
+              {eintrag.reife === "vorbereitet" ? " (neu)" : ""}
+            </option>
+          ))}
+        </select>
+        {state.fields?.game ? (
+          <span className="field-error">{state.fields.game}</span>
+        ) : (
+          <span className="hint">
+            Bestimmt Adresse, Ressourcenbedarf und Server-Software.
+          </span>
+        )}
+      </div>
+
+      {game.reife === "vorbereitet" ? (
+        <p className="notice notice-warn">
+          {game.name} ist eingerichtet, aber auf diesem Node noch nicht im
+          Dauerbetrieb gelaufen. Rechne beim ersten Start mit Wartezeit — die
+          Installation lädt rund {Math.round(game.installMb / 1024)} GB.
+          {game.hinweis ? ` ${game.hinweis}` : ""}
+        </p>
+      ) : null}
 
       <div className="field">
         <label htmlFor="name">Name</label>
@@ -123,12 +158,19 @@ export function CreateServerForm({
             placeholder="meinserver"
             aria-invalid={blocks(addressState) ? true : undefined}
           />
-          <span className="addr-suffix">.{publicHost}</span>
+          <span className="addr-suffix">{suffix}</span>
         </div>
         <FieldStatus
           state={addressState}
           serverError={state.fields?.subdomain}
-          hint="Unter dieser Adresse verbinden sich Spieler. Später nicht mehr änderbar."
+          hint={
+            game.routing === "hostname"
+              ? "Unter dieser Adresse verbinden sich Spieler. Später nicht mehr änderbar."
+              : `Dazu kommt ein Port, den dieser Server für sich allein bekommt — ` +
+                `${game.name} kennt im Protokoll keinen Hostnamen, über den sich ` +
+                `Server unterscheiden ließen. Die vollständige Adresse steht nach ` +
+                `dem Anlegen auf der Serverseite.`
+          }
         />
       </div>
 
@@ -182,26 +224,43 @@ export function CreateServerForm({
       </fieldset>
 
       <div className="field-grid">
-        <div className="field">
-          <label htmlFor="serverType">Server-Software</label>
-          <select id="serverType" name="serverType" defaultValue="PAPER">
-            {SOFTWARE.map((item) => (
-              <option key={item.value} value={item.value}>
-                {item.label} — {item.hint}
-              </option>
-            ))}
-          </select>
-          {state.fields?.serverType ? (
-            <span className="field-error">{state.fields.serverType}</span>
-          ) : null}
-        </div>
+        {/*
+          Die Software-Frage gibt es nur, wo sie eine Antwort hat: Paper
+          oder Vanilla ist eine Minecraft-Frage. Für Valheim wäre ein
+          Pflichtfeld hier eine Hürde ohne Sinn.
+        */}
+        {game.variants ? (
+          <div className="field">
+            <label htmlFor="serverType">Server-Software</label>
+            <select id="serverType" name="serverType" defaultValue={game.variants[0]?.id}>
+              {game.variants.map((variante) => (
+                <option key={variante.id} value={variante.id}>
+                  {variante.label}
+                  {variante.hint ? ` — ${variante.hint}` : ""}
+                </option>
+              ))}
+            </select>
+            {state.fields?.serverType ? (
+              <span className="field-error">{state.fields.serverType}</span>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="field">
           <label htmlFor="mcVersion">Version</label>
           <input id="mcVersion" name="mcVersion" defaultValue="LATEST" />
           <span className="hint">
-            <code>LATEST</code> oder eine feste Version wie <code>1.21.8</code>.
-            Die passende Java-Fassung wird daraus abgeleitet.
+            {game.id === "minecraft" ? (
+              <>
+                <code>LATEST</code> oder eine feste Version wie{" "}
+                <code>1.21.8</code>. Die passende Java-Fassung wird daraus
+                abgeleitet.
+              </>
+            ) : (
+              <>
+                <code>LATEST</code> lädt die aktuelle Fassung über Steam.
+              </>
+            )}
           </span>
         </div>
       </div>

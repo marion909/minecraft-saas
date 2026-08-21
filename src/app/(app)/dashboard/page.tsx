@@ -1,8 +1,24 @@
 import Link from "next/link";
 
 import { db } from "@/lib/db";
+import { findGame, serverAddress } from "@/lib/games";
 import { requireUser } from "@/lib/session";
 import { STATUS_LABEL, STATUS_TONE } from "@/lib/status-label";
+
+/**
+ * Die Adresse, wie ein Spieler sie einträgt. Bei Minecraft reicht der
+ * Name, sonst gehört der Port dazu.
+ */
+function adresse(server: {
+  game: string;
+  subdomain: string;
+  port: number | null;
+  node: { baseDomain: string };
+}): string {
+  const game = findGame(server.game);
+  if (!game) return server.subdomain;
+  return serverAddress(game, server.subdomain, server.node.baseDomain, server.port);
+}
 
 export default async function DashboardPage() {
   const session = await requireUser();
@@ -48,11 +64,11 @@ export default async function DashboardPage() {
                   </span>
                 </span>
                 <code className="server-card-addr">
-                  {server.subdomain}.{server.node.publicHost}
+                  {adresse(server)}
                 </code>
                 <span className="hint">
-                  {server.plan.name} · {server.appliedMemoryMb} MB RAM ·{" "}
-                  {server.serverType} {server.mcVersion}
+                  {findGame(server.game)?.name ?? server.game} ·{" "}
+                  {server.plan.name} · {server.appliedMemoryMb} MB RAM
                 </span>
               </Link>
             </li>

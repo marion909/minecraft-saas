@@ -46,14 +46,33 @@ export const nodeInput = z
       .max(200, "Höchstens 200 Zeichen.")
       .or(z.literal("")),
 
-    publicHost: z
+    // Basis aller Serveradressen. Das Spielsegment kommt aus dem
+    // Katalog davor: <server>.<spiel>.<basis>. Wer hier "mc.example.com"
+    // einträgt, bekommt "welt.mc.mc.example.com" — deshalb die Warnung
+    // im Formular.
+    baseDomain: z
       .string()
       .trim()
       .toLowerCase()
       .regex(
         /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/,
-        "Vollständiger Name mit Punkt, z. B. mc.example.com — ohne Schema und ohne Port.",
+        "Vollständiger Name mit Punkt, z. B. example.com — ohne Schema und ohne Port.",
       ),
+
+    // Für Spiele ohne Hostname-Routing. Unter 1024 liegen die
+    // privilegierten Ports, die ein Container nicht binden darf; über
+    // 65535 gibt es keine.
+    portRangeStart: z.coerce
+      .number()
+      .int("Ganze Zahl.")
+      .min(1024, "Mindestens 1024 — darunter sind die Ports des Systems.")
+      .max(65_535, "Höchstens 65535."),
+
+    portRangeEnd: z.coerce
+      .number()
+      .int("Ganze Zahl.")
+      .min(1024, "Mindestens 1024.")
+      .max(65_535, "Höchstens 65535."),
 
     totalMemoryMb: z.coerce
       .number()
@@ -101,7 +120,30 @@ export const nodeInput = z
   .refine((data) => data.reservedDiskMb < data.totalDiskMb, {
     path: ["reservedDiskMb"],
     message: "Muss kleiner sein als der gesamte Speicherplatz.",
-  });
+  })
+  .refine((data) => data.portRangeEnd > data.portRangeStart, {
+    path: ["portRangeEnd"],
+    message: "Muss über dem Anfang liegen.",
+  })
+  // Ein Bereich, der nur ein paar Ports fasst, ist schnell voll — und
+  // dann scheitert das Anlegen mit einer Meldung, die nach einem
+  // Kapazitätsproblem aussieht, obwohl nur die Nummern ausgehen.
+  .refine((data) => data.portRangeEnd - data.portRangeStart >= 9, {
+    path: ["portRangeEnd"],
+    message: "Mindestens zehn Ports — sonst ist der Bereich zu schnell voll.",
+  })
+  // 25565 gehört mc-router. Läge er im Bereich, bekäme irgendwann ein
+  // Valheim-Server ihn zugeteilt und alle Minecraft-Server wären weg.
+  .refine(
+    (data) => !(data.portRangeStart <= 25_565 && 25_565 <= data.portRangeEnd),
+    {
+      path: ["portRangeStart"],
+      message:
+        "Der Bereich enthält 25565 — den belegt mc-router für alle " +
+        "Minecraft-Server. Ein Spiel, das ihn zugeteilt bekäme, würde sie " +
+        "unerreichbar machen.",
+    },
+  );
 
 export type NodeInput = z.infer<typeof nodeInput>;
 
@@ -110,7 +152,9 @@ export function nodeInputFromForm(formData: FormData) {
     name: formData.get("name") ?? "",
     agentUrl: formData.get("agentUrl") ?? "",
     agentToken: formData.get("agentToken") ?? "",
-    publicHost: formData.get("publicHost") ?? "",
+    baseDomain: formData.get("baseDomain") ?? "",
+    portRangeStart: formData.get("portRangeStart") ?? "",
+    portRangeEnd: formData.get("portRangeEnd") ?? "",
     totalMemoryMb: formData.get("totalMemoryMb") ?? "",
     totalCpuCores: formData.get("totalCpuCores") ?? "",
     totalDiskMb: formData.get("totalDiskMb") ?? "",

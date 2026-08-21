@@ -60,6 +60,10 @@ export type AgentHostInfo = {
 
 export type CreateServerInput = {
   serverId: string;
+  /** Schlüssel aus dem Spielkatalog (src/lib/games.ts). */
+  game: string;
+  /** Zugeteilter Host-Port; null bei Minecraft. */
+  port: number | null;
   subdomain: string;
   serverType: string;
   mcVersion: string;

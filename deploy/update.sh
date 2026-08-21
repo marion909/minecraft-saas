@@ -65,6 +65,16 @@ if touched '^prisma/schema\.prisma$'; then
   # dabei Spalten entfernen. Bei einer entfernten Spalte sind deren Daten
   # weg, und niemand fragt vorher.
   warn "Schema geändert — Datenbank angleichen mit: cd $APP_DIR && pnpm db:push"
+
+  # Seit der Spielauswahl gibt es eine Eindeutigkeitssperre auf
+  # (Node, Port). Prisma warnt davor, weil sie bei doppelten Werten
+  # fehlschlüge — löschen tut sie nichts.
+  if grep -q 'unique(\[nodeId, port\])' "$APP_DIR/prisma/schema.prisma" 2>/dev/null; then
+    warn "Dabei fragt Prisma nach --accept-data-loss: Das gilt der neuen"
+    warn "Portsperre und löscht nichts. Vollständig:"
+    warn "  pnpm exec prisma db push --accept-data-loss"
+    warn "Danach einmalig: node scripts/migrate-games.ts --tun"
+  fi
 else
   skip "Datenmodell unverändert"
 fi
@@ -118,6 +128,36 @@ if touched '^deploy/(docker-compose\.prod\.yml|Caddyfile)$'; then
   (cd "$APP_DIR/deploy" && docker compose --env-file "$APP_DIR/.env" \
      -f docker-compose.prod.yml up -d >/dev/null 2>&1)
   ok "Infrastruktur-Container abgeglichen"
+fi
+
+# Die Firewall gehört eigentlich setup.sh. Diese eine Regel steht hier
+# trotzdem: Ohne sie ist jeder Server außer Minecraft nach dem Update zwar
+# angelegt und gestartet, aber von außen nicht erreichbar — und das sieht
+# nach einem Fehler im Panel aus statt nach einer fehlenden Regel.
+if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "^Status: active"; then
+  GAME_PORT_START="$(sed -n 's/^NODE_PORT_RANGE_START="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$APP_DIR/.env" | head -1)"
+  GAME_PORT_END="$(sed -n 's/^NODE_PORT_RANGE_END="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$APP_DIR/.env" | head -1)"
+  GAME_PORT_START="${GAME_PORT_START:-27000}"
+  GAME_PORT_END="${GAME_PORT_END:-27099}"
+
+  if ufw status | grep -q "${GAME_PORT_START}:${GAME_PORT_END}/tcp"; then
+    skip "Spiel-Ports ${GAME_PORT_START}-${GAME_PORT_END} bereits offen"
+  else
+    ufw allow "${GAME_PORT_START}:${GAME_PORT_END}/tcp" >/dev/null
+    ufw allow "${GAME_PORT_START}:${GAME_PORT_END}/udp" >/dev/null
+    ok "Spiel-Ports ${GAME_PORT_START}-${GAME_PORT_END} geöffnet (TCP+UDP)"
+    warn "Im Router müssen sie zusätzlich auf diesen Host weitergeleitet sein,"
+    warn "sonst bleiben alle Spiele außer Minecraft im lokalen Netz."
+  fi
+
+  # Fehlt der Eintrag in der .env, kennt der Node-Datensatz den Bereich
+  # womöglich auch nicht — dann stimmt die Firewall mit dem Panel nicht
+  # überein und die Zuteilung läuft ins Leere.
+  grep -q '^NODE_PORT_RANGE_START=' "$APP_DIR/.env" 2>/dev/null || {
+    printf '\nNODE_PORT_RANGE_START="%s"\nNODE_PORT_RANGE_END="%s"\n' \
+      "$GAME_PORT_START" "$GAME_PORT_END" >> "$APP_DIR/.env"
+    ok "Portbereich in .env ergänzt"
+  }
 fi
 
 systemctl restart mc-panel

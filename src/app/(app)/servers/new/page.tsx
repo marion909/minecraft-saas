@@ -75,7 +75,7 @@ export default async function NewServerPage() {
         </div>
       ) : (
         <div className="card" style={{ maxWidth: "44rem" }}>
-          <CreateServerForm plans={choices} publicHost={node.publicHost} />
+          <CreateServerForm plans={choices} baseDomain={node.baseDomain} />
         </div>
       )}
 

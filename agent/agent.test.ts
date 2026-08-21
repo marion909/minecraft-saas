@@ -200,3 +200,115 @@ describe("RCON-Protokoll", () => {
     assert.deepEqual(packets, [packet]);
   });
 });
+
+describe("buildContainerOptions über mehrere Spiele", () => {
+  const basis = {
+    serverId: "cmst9sik00002kos5j9ew2dh6",
+    subdomain: "welt",
+    serverType: "PAPER" as const,
+    mcVersion: "1.21",
+    memoryMb: 4096,
+    cpuCores: 2,
+    maxPlayers: 20,
+    rconPassword: "geheim",
+    dataPath: "/srv/mc/srv-x",
+    hostname: "welt.mc.example.com",
+  };
+
+  it("baut Minecraft genau wie vor der Spielauswahl", () => {
+    // Die Regression, die wehtäte: Ein Minecraft-Server, der plötzlich
+    // seinen Port veröffentlicht oder die Router-Marke verliert, ist für
+    // Spieler nicht mehr erreichbar.
+    const ohne = buildContainerOptions(basis);
+    const mit = buildContainerOptions({ ...basis, game: "minecraft", port: null });
+
+    assert.deepEqual(ohne.Env, mit.Env);
+    assert.equal(mit.Labels?.["mc-router.host"], "welt.mc.example.com");
+    assert.equal(mit.Labels?.["saas.game"], "minecraft");
+
+    // Kein veröffentlichter Port: Spieler kommen nur über den Router.
+    assert.equal(mit.HostConfig?.PortBindings, undefined);
+    assert.equal(mit.ExposedPorts, undefined);
+    assert.match(String(mit.Image), /minecraft/);
+  });
+
+  it("veröffentlicht bei Spielen ohne Hostname-Routing den Port", () => {
+    const valheim = buildContainerOptions({
+      ...basis,
+      game: "valheim",
+      port: 27004,
+      hostname: "welt.valheim.example.com",
+    });
+
+    // Innen die gewohnten Nummern, außen der zugeteilte Block.
+    assert.deepEqual(valheim.HostConfig?.PortBindings, {
+      "2456/udp": [{ HostPort: "27004" }],
+      "2457/udp": [{ HostPort: "27005" }],
+    });
+
+    assert.equal(valheim.Image, "lloesche/valheim-server");
+  });
+
+  it("setzt bei anderen Spielen keine Router-Marke", () => {
+    // Ein Eintrag im Router würde Minecraft-Spieler auf einen
+    // Valheim-Container schicken.
+    const valheim = buildContainerOptions({
+      ...basis,
+      game: "valheim",
+      port: 27004,
+    });
+
+    assert.equal(valheim.Labels?.["mc-router.host"], undefined);
+  });
+
+  it("nimmt für fremde Spiele nicht das Minecraft-Image", () => {
+    // AGENT_IMAGE überschreibt bei Minecraft absichtlich das Image;
+    // für Valheim käme sonst ein Minecraft-Container heraus.
+    const valheim = buildContainerOptions({
+      ...basis,
+      game: "terraria",
+      port: 27010,
+      image: undefined,
+    });
+
+    assert.equal(valheim.Image, "ryshe/terraria");
+  });
+
+  it("hält die Speichergrenzen für jedes Spiel ein", () => {
+    for (const spiel of ["minecraft", "valheim", "cs2", "terraria"]) {
+      const optionen = buildContainerOptions({
+        ...basis,
+        game: spiel,
+        port: spiel === "minecraft" ? null : 27000,
+      });
+
+      assert.equal(
+        optionen.HostConfig?.Memory,
+        4096 * 1024 * 1024,
+        `${spiel}: Speichergrenze`,
+      );
+      assert.equal(
+        optionen.HostConfig?.MemorySwap,
+        optionen.HostConfig?.Memory,
+        `${spiel}: kein Swap`,
+      );
+      assert.deepEqual(
+        optionen.HostConfig?.CapDrop,
+        ["ALL"],
+        `${spiel}: Rechte fallen lassen`,
+      );
+      assert.deepEqual(
+        optionen.HostConfig?.SecurityOpt,
+        ["no-new-privileges:true"],
+        `${spiel}: keine neuen Rechte`,
+      );
+    }
+  });
+
+  it("weist ein unbekanntes Spiel ab, statt irgendetwas zu bauen", () => {
+    assert.throws(
+      () => buildContainerOptions({ ...basis, game: "halflife3" }),
+      /Unbekanntes Spiel/,
+    );
+  });
+});

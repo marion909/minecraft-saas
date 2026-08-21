@@ -9,11 +9,14 @@ import {
   type NodeFormState,
   type NodeProbe,
 } from "@/app/(app)/admin/nodes/actions";
+import { GAMES } from "@/lib/games";
 
 export type NodeDefaults = {
   name: string;
   agentUrl: string;
-  publicHost: string;
+  baseDomain: string;
+  portRangeStart: number | "";
+  portRangeEnd: number | "";
   totalMemoryMb: number | "";
   totalCpuCores: number | "";
   totalDiskMb: number | "";
@@ -31,7 +34,9 @@ export type NodeDefaults = {
 export const EMPTY_NODE: NodeDefaults = {
   name: "",
   agentUrl: "http://127.0.0.1:8787",
-  publicHost: "",
+  baseDomain: "",
+  portRangeStart: 27000,
+  portRangeEnd: 27099,
   totalMemoryMb: 32768,
   totalCpuCores: 8,
   totalDiskMb: 900000,
@@ -138,6 +143,11 @@ export function NodeForm({
   const [agentUrl, setAgentUrl] = useState(defaults.agentUrl);
   const [agentToken, setAgentToken] = useState("");
 
+  // Kontrolliert, damit die DNS-Liste unten sofort die richtigen Namen
+  // zeigt — die abzutippen ist die eigentliche Arbeit beim Einrichten.
+  const [baseDomain, setBaseDomain] = useState(defaults.baseDomain);
+  const basis = baseDomain.trim().toLowerCase() || "example.com";
+
   return (
     <form className="stack" action={formAction}>
       {state.error ? <p className="notice notice-error">{state.error}</p> : null}
@@ -162,27 +172,42 @@ export function NodeForm({
       </div>
 
       <div className="field">
-        <label htmlFor="publicHost">Öffentlicher Hostname</label>
+        <label htmlFor="baseDomain">Basis-Domain</label>
         <input
-          id="publicHost"
-          name="publicHost"
-          defaultValue={defaults.publicHost}
-          placeholder="mc.example.com"
+          id="baseDomain"
+          name="baseDomain"
+          value={baseDomain}
+          onChange={(event) => setBaseDomain(event.target.value)}
+          placeholder="example.com"
           autoComplete="off"
           required
-          aria-invalid={state.fields?.publicHost ? true : undefined}
+          aria-invalid={state.fields?.baseDomain ? true : undefined}
         />
-        {state.fields?.publicHost ? (
-          <span className="field-error">{state.fields.publicHost}</span>
+        {state.fields?.baseDomain ? (
+          <span className="field-error">{state.fields.baseDomain}</span>
         ) : (
           <span className="hint">
-            Serveradressen entstehen daraus als{" "}
-            <code>name.{defaults.publicHost || "mc.example.com"}</code>. Dafür
-            muss <code>*.{defaults.publicHost || "mc.example.com"}</code> per DNS
-            auf diesen Host zeigen — ohne Cloudflare-Proxy, Minecraft ist kein
-            HTTP.
+            Ohne Spielsegment — das kommt aus dem Katalog davor. Aus{" "}
+            <code>{basis}</code> wird{" "}
+            <code>welt.mc.{basis}</code> für Minecraft und{" "}
+            <code>mixe.cs2.{basis}</code> für Counter-Strike 2.
           </span>
         )}
+      </div>
+
+      <div className="notice">
+        <strong>Nötige DNS-Einträge</strong> — je ein A-Eintrag auf die
+        öffentliche IP dieses Hosts, alle ohne Cloudflare-Proxy (graue Wolke):
+        Spiele sprechen kein HTTP und kämen durch den Proxy nie an.
+        <ul className="dns-liste">
+          {GAMES.map((eintrag) => (
+            <li key={eintrag.id}>
+              <code>*.{eintrag.slug}.{basis}</code>
+              <span className="hint"> {eintrag.name}</span>
+            </li>
+          ))}
+        </ul>
+        Nur für die Spiele nötig, die tatsächlich angeboten werden.
       </div>
 
       <fieldset className="fieldset">
@@ -250,6 +275,55 @@ export function NodeForm({
         </div>
 
         {probe ? <ProbeResult probe={probe} /> : null}
+      </fieldset>
+
+      <fieldset className="fieldset">
+        <legend>Portbereich</legend>
+        <p className="hint" style={{ maxWidth: "60ch" }}>
+          Nur Minecraft kommt ohne eigenen Port aus: Dort teilen sich alle
+          Server 25565, und mc-router verteilt sie am Hostnamen aus dem
+          Handshake. Jedes andere Spiel kennt kein solches Feld im Protokoll —
+          dort unterscheidet allein der Port, also bekommt jeder Server einen
+          aus diesem Bereich. Er muss in der Firewall offen und im Router auf
+          diesen Host weitergeleitet sein, TCP und UDP.
+        </p>
+
+        <div className="field-grid">
+          <div className="field">
+            <label htmlFor="portRangeStart">Von</label>
+            <input
+              id="portRangeStart"
+              name="portRangeStart"
+              type="number"
+              defaultValue={String(defaults.portRangeStart)}
+              required
+              aria-invalid={state.fields?.portRangeStart ? true : undefined}
+            />
+            {state.fields?.portRangeStart ? (
+              <span className="field-error">{state.fields.portRangeStart}</span>
+            ) : null}
+          </div>
+
+          <div className="field">
+            <label htmlFor="portRangeEnd">Bis</label>
+            <input
+              id="portRangeEnd"
+              name="portRangeEnd"
+              type="number"
+              defaultValue={String(defaults.portRangeEnd)}
+              required
+              aria-invalid={state.fields?.portRangeEnd ? true : undefined}
+            />
+            {state.fields?.portRangeEnd ? (
+              <span className="field-error">{state.fields.portRangeEnd}</span>
+            ) : (
+              <span className="hint">
+                100 Ports reichen für rund 60 Server — manche Spiele belegen
+                zwei nebeneinander.
+              </span>
+            )}
+          </div>
+        </div>
       </fieldset>
 
       <fieldset className="fieldset">

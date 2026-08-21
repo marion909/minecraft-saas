@@ -1,8 +1,8 @@
-# Minecraft-Server SaaS
+# Gameserver SaaS
 
-Ein Admin legt Konten an, jedes Konto bekommt einen eigenen Minecraft-Server
-als Docker-Container. Tarife bestimmen RAM-, CPU- und Speichergrenzen; ZFS
-setzt sie als harte Quota durch.
+Ein Admin legt Konten an, jedes Konto bekommt eigene Spielserver als
+Docker-Container. Tarife bestimmen RAM-, CPU- und Speichergrenzen; ZFS setzt
+sie als harte Quota durch.
 
 **Läuft.** Panel unter `panel.neuhauser.app`, Server unter
 `<name>.mc.neuhauser.app`, beides aus dem Internet erreichbar.
@@ -191,6 +191,51 @@ der Agent ab — ein unterbrochenes Backup lässt den Server im Zustand
 Als Sicherung dient der abgetippte Node-Name, kein Bestätigungsdialog: Ein
 „Wirklich?“ klickt man weg, ohne es zu lesen.
 
+**Mehrere Spiele.** Beim Anlegen steht die Spielauswahl ganz oben, und die
+Adresse richtet sich danach: `welt.mc.example.com` für Minecraft,
+`mixe.cs2.example.com` für Counter-Strike 2. Der Katalog liegt in
+[src/lib/games.ts](src/lib/games.ts) — ein neues Spiel ist im Regelfall ein
+Eintrag dort, keine Änderung an Panel oder Agent.
+
+Der entscheidende Unterschied steht im Feld `routing`:
+
+| | Minecraft | alle anderen |
+| --- | --- | --- |
+| Unterscheidung | Hostname aus dem Handshake | eigener Port |
+| Port | 25565 für alle | einer je Server aus dem Node-Bereich |
+| Weg zum Container | mc-router | direkt veröffentlicht |
+| Adresse | `welt.mc.example.com` | `welt.valheim.example.com:27004` |
+
+Das ist keine Entwurfsentscheidung, sondern Protokoll: Minecraft schickt den
+Zielhostnamen im Handshake mit, deshalb kann mc-router am Namen verteilen.
+Source-Spiele, Valheim und die übrigen laufen über UDP und kennen kein
+solches Feld — dort verbindet der Client zu IP und Port. Der DNS-Name ist
+dann Bequemlichkeit, unterschieden wird am Port.
+
+Daraus folgt der Rest: Jeder Node hat einen Portbereich (Voreinstellung
+27000–27099), aus dem `allocatePort()` den niedrigsten freien Block vergibt —
+Valheim und Rust belegen zwei nebeneinander. Eine Eindeutigkeitssperre auf
+(Node, Port) hält auch bei gleichzeitigem Anlegen; zwei Server auf einem Port
+hieße, dass der zweite nicht startet und fremde Spieler beim ersten landen.
+Der Bereich darf 25565 nicht enthalten, sonst nähme ein Spiel irgendwann
+allen Minecraft-Servern den Router-Port weg.
+
+Für jedes angebotene Spiel braucht es einen eigenen DNS-Wildcard
+(`*.cs2.example.com` und so weiter). Die vollständige Liste zeigt das Panel
+beim Bearbeiten eines Nodes.
+
+**Was erprobt ist und was nicht.** Minecraft läuft hier seit Monaten. Für
+Terraria ist der ganze Weg einmal durchgespielt: Container aus dem
+Katalog-Image, Port 7777 innen auf 27000 außen, kein Router-Eintrag, Start in
+fünf Sekunden. Die übrigen Spiele sind als „vorbereitet" eingetragen —
+Adresse, Ports und Ressourcenbedarf stimmen, aber sie sind auf diesem Node
+noch nicht gelaufen. Das Panel schreibt das beim Anlegen dazu, statt es zu
+verschweigen.
+
+Nicht dabei ist **Call of Duty**: Für die aktuellen Titel gibt es seit Black
+Ops 3 keine offiziellen dedizierten Server mehr, und die inoffiziellen
+Projekte lassen sich nicht legal als Image verteilen.
+
 Noch nicht da: Abrechnung (P8).
 
 ## Agent
@@ -260,7 +305,7 @@ nur die Datenbank kennt sie, und der Helfer bekommt sie nie zu sehen.
 ## Tests
 
 ```bash
-pnpm test        # 203 Fälle: Kapazität, Node-Wahl, Archiv-Prüfung, Pfad-Schutz, Validierung
+pnpm test        # 234 Fälle: Kapazität, Node-Wahl, Portvergabe, Archiv-Prüfung, Pfad-Schutz
 pnpm typecheck
 pnpm build
 ```
@@ -381,9 +426,12 @@ Platz ist also selbst auf einer einzelnen SSD nicht der Engpass.
 prisma/schema.prisma     Datenmodell (Auth, Plan, Node, Server, Backup, Audit)
 prisma/seed.ts           Node und Standard-Tarife
 scripts/create-admin.ts  Erstes Konto anlegen (das Panel kann es nicht)
+scripts/migrate-games.ts Bestehende Nodes auf mehrere Spiele umstellen
 scripts/promote-admin.ts Bestehendes Konto hochstufen
 src/lib/auth.ts          better-auth, serverseitig
 src/lib/session.ts       requireUser / requireAdmin für Seiten
+src/lib/games.ts         Spielkatalog: Adresse, Ports, Image, Bedarf
+src/lib/ports.ts         Portvergabe für Spiele ohne Hostname-Routing
 src/lib/capacity.ts      Ressourcen-Buchhaltung und Node-Wahl, reine Funktionen
 src/lib/env.ts           Prüfung der Umgebungsvariablen beim Start
 src/app/(auth)/          Anmelden
