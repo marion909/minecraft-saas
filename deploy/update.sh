@@ -96,6 +96,14 @@ datenbank_angleichen() {
 
   rm -f "$push_log"
 
+  if [ "$DB_GEAENDERT" = "1" ]; then
+    # `prisma db push` erzeugt den Client seit Prisma 7 nicht mehr mit
+    # (siehe `prisma db push --help`). Das Folgeskript lädt ihn aber —
+    # mit einem Client von vor dem Abgleich kennt es die neuen Spalten
+    # nicht.
+    pnpm db:generate >/dev/null
+  fi
+
   # Umstellungen, die dem Schema folgen. Jedes Skript prüft selbst, ob
   # es schon gelaufen ist, und tut sonst nichts.
   if [ -f "$APP_DIR/scripts/migrate-games.ts" ]; then
@@ -104,37 +112,42 @@ datenbank_angleichen() {
 }
 
 printf '\n%sStand holen%s\n' "$B" "$N"
-before="$(git rev-parse HEAD)"
+# UPDATE_VORHER setzt der Neustart weiter unten. Sonst ist der Startpunkt
+# schlicht der aktuelle Stand.
+before="${UPDATE_VORHER:-$(git rev-parse HEAD)}"
 git fetch --quiet origin "$BRANCH"
 git reset --hard --quiet "origin/$BRANCH"
 after="$(git rev-parse HEAD)"
 
-if [ "$before" = "$after" ]; then
-  ok "Schon auf $(git rev-parse --short HEAD) — Code unverändert."
-  # Trotzdem nachsehen: Ein Abgleich, der beim letzten Mal an einer
-  # Bestätigung hing, wäre sonst für immer offen.
-  datenbank_angleichen
-
-  [ "$DB_GEAENDERT" = "1" ] || exit 0
-
-  # Die Datenbank hat sich gerade geändert, der laufende Build stammt von
-  # davor. Einmal durchbauen, statt es dem nächsten Aufruf zu überlassen.
-  warn "Datenbank angeglichen — Panel wird neu gebaut."
-  pnpm build >/dev/null
-  chown -R root:mcsaas "$APP_DIR"
-  chmod -R g+rX "$APP_DIR"
-  chown -R mcpanel:mcsaas "$APP_DIR/.next"
-  systemctl restart mc-panel mc-agent
-  sleep 3
-  systemctl is-active --quiet mc-panel || die "mc-panel läuft nicht — journalctl -u mc-panel -n 50"
-  ok "Panel neu gebaut und gestartet"
-  exit 0
+# Das Skript hat sich womöglich gerade selbst überschrieben.
+#
+# Bash liest eine Skriptdatei nicht auf einmal, sondern arbeitet sie
+# fortlaufend ab und hält dabei den geöffneten Inode fest. `git reset`
+# legt eine neue Datei an, statt die alte zu überschreiben — der offene
+# Inode bleibt also gültig, und der Rest dieses Laufs stammt weiter aus
+# der ALTEN Fassung. Die neue griffe erst beim nächsten Aufruf.
+#
+# Das ist keine Feinheit: Genau daran lag der kaputte Build. Die alte
+# Fassung baute bei Schema-Änderungen einfach weiter und gab nur den
+# Hinweis aus, die Datenbank sei noch anzugleichen. Danach lief neuer
+# Code gegen alte Spalten, und das Panel beantwortete jede Seite mit
+# einem Serverfehler.
+if [ "${UPDATE_NEUGESTARTET:-0}" != "1" ] && [ "$before" != "$after" ] \
+   && git diff --name-only "$before" "$after" | grep -qx 'deploy/update\.sh'; then
+  warn "update.sh hat sich geändert — Neustart mit der neuen Fassung."
+  export UPDATE_NEUGESTARTET=1 UPDATE_VORHER="$before"
+  exec "$APP_DIR/deploy/update.sh"
 fi
 
-changed="$(git diff --name-only "$before" "$after")"
-ok "$(git rev-parse --short "$before") → $(git rev-parse --short "$after"), $(printf '%s\n' "$changed" | grep -c .) Datei(en)"
+if [ "$before" = "$after" ]; then
+  ok "Schon auf $(git rev-parse --short HEAD) — Code unverändert."
+  changed=""
+else
+  changed="$(git diff --name-only "$before" "$after")"
+  ok "$(git rev-parse --short "$before") → $(git rev-parse --short "$after"), $(printf '%s\n' "$changed" | grep -c .) Datei(en)"
+fi
 
-touched() { printf '%s\n' "$changed" | grep -qE "$1"; }
+touched() { [ -n "$changed" ] && printf '%s\n' "$changed" | grep -qE "$1"; }
 
 printf '\n%sBauen%s\n' "$B" "$N"
 
@@ -153,7 +166,20 @@ else
 fi
 
 
+# Bewusst auch bei unverändertem Code: Ein Abgleich, der beim letzten Mal
+# an einer Bestätigung hing, wäre sonst für immer offen.
 datenbank_angleichen
+
+# Weder neuer Code noch eine geänderte Datenbank — dann gibt es nichts zu
+# bauen. Der Rest des Skripts ist ab hier nicht mehr umsonst.
+if [ -z "$changed" ] && [ "$DB_GEAENDERT" != "1" ]; then
+  printf '\n%s%sNichts zu tun.%s\n\n' "$B" "$G" "$N"
+  exit 0
+fi
+
+if [ -z "$changed" ]; then
+  warn "Code unverändert, aber die Datenbank wurde angeglichen — es wird gebaut."
+fi
 
 pnpm build >/dev/null
 ok "Panel gebaut"
@@ -242,7 +268,11 @@ ok "mc-panel neu gestartet"
 # Nur wenn Agent-Code betroffen ist. Ein Neustart trennt keine Spieler —
 # die Minecraft-Container laufen unabhängig weiter —, aber laufende
 # Vorgänge wie ein Backup verlieren ihren Fortschrittsbericht.
-if touched '^agent/'; then
+#
+# Bei leerem Diff ist unbekannt, was sich geändert hat — dann lieber
+# neu starten. Sonst liefe der Agent mit Code von vor dem Abgleich
+# gegen eine Datenbank, die schon das neue Schema hat.
+if [ -z "$changed" ] || touched '^agent/'; then
   systemctl restart mc-agent
   ok "mc-agent neu gestartet (Agent-Code geändert)"
 else
