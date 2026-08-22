@@ -46,6 +46,20 @@ export type Game = {
   /** Weitere Ports, die das Spiel nach außen braucht (Query, Voice …). */
   extraPorts?: { port: number; transport: Transport; zweck: string }[];
   image: string;
+  /**
+   * Wohin im Container das Datenverzeichnis des Servers gehört.
+   *
+   * Der einzige Pfad, an dem etwas liegt, das nicht wiederherstellbar
+   * ist. Alles andere im Container lädt sich notfalls neu; die Welt
+   * nicht. Steht hier der falsche Pfad, läuft der Server trotzdem — nur
+   * schreibt er in die Container-Schicht, und beim nächsten Ersetzen
+   * des Containers ist alles weg. Auch die Sicherungen wären leer,
+   * denn die schnappschussen das Dataset.
+   *
+   * Deshalb Pflichtfeld: Ein neues Spiel soll nicht mit dem Minecraft-
+   * Pfad durchrutschen.
+   */
+  dataDir: string;
   /** Untergrenze, unterhalb derer der Server nicht sinnvoll läuft. */
   minMemoryMb: number;
   /** Grober Platzbedarf der Installation, ohne Welt. */
@@ -66,6 +80,8 @@ export const GAMES: Game[] = [
     transport: "tcp",
     gamePort: 25565,
     image: "itzg/minecraft-server",
+    /** Volumes und WorkingDir des Images. */
+    dataDir: "/data",
     minMemoryMb: 1280,
     installMb: 1024,
     reife: "erprobt",
@@ -87,6 +103,10 @@ export const GAMES: Game[] = [
     gamePort: 27015,
     extraPorts: [{ port: 27020, transport: "udp", zweck: "SourceTV" }],
     image: "joedwards32/cs2",
+    /** STEAMCMDDIR und STEAMAPPDIR=/home/steam/cs2-dedicated.
+     * Bewusst das Elternverzeichnis: Sonst lädt der Container die
+     * 32 GB bei jedem Ersetzen erneut. */
+    dataDir: "/home/steam",
     minMemoryMb: 2048,
     // Der Grund, warum CS2 auf einer 1-TB-Platte teuer ist: Die reine
     // Installation ist größer als zwanzig Minecraft-Welten.
@@ -99,19 +119,6 @@ export const GAMES: Game[] = [
       "Valve ist nötig, damit der Server öffentlich sichtbar ist.",
   },
   {
-    id: "css",
-    name: "Counter-Strike: Source",
-    slug: "css",
-    routing: "port",
-    transport: "udp",
-    gamePort: 27015,
-    image: "cm2network/css",
-    minMemoryMb: 1024,
-    installMb: 12_288,
-    reife: "vorbereitet",
-    rcon: true,
-  },
-  {
     id: "tf2",
     name: "Team Fortress 2",
     slug: "tf2",
@@ -119,6 +126,8 @@ export const GAMES: Game[] = [
     transport: "udp",
     gamePort: 27015,
     image: "cm2network/tf2",
+    /** STEAMAPPDIR=/home/steam/tf-dedicated, daneben steamcmd. */
+    dataDir: "/home/steam",
     minMemoryMb: 1024,
     installMb: 16_384,
     reife: "vorbereitet",
@@ -131,7 +140,9 @@ export const GAMES: Game[] = [
     routing: "port",
     transport: "udp",
     gamePort: 27015,
-    image: "cm2network/garrysmod",
+    image: "ich777/steamcmd:garrysmod",
+    /** DATA_DIR=/serverdata, darunter steamcmd und serverfiles. */
+    dataDir: "/serverdata",
     minMemoryMb: 2048,
     installMb: 10_240,
     reife: "vorbereitet",
@@ -146,6 +157,8 @@ export const GAMES: Game[] = [
     gamePort: 2456,
     extraPorts: [{ port: 2457, transport: "udp", zweck: "Abfrage" }],
     image: "lloesche/valheim-server",
+    /** Die Welt liegt in /config/worlds_local. */
+    dataDir: "/config",
     minMemoryMb: 4096,
     installMb: 4096,
     reife: "vorbereitet",
@@ -160,6 +173,9 @@ export const GAMES: Game[] = [
     transport: "tcp",
     gamePort: 7777,
     image: "ryshe/terraria",
+    /** Deklariertes Volume; dort landen Welt, config.json und die
+     * TShock-Datenbank. Nachgemessen an einem laufenden Container. */
+    dataDir: "/root/.local/share/Terraria/Worlds",
     minMemoryMb: 1024,
     installMb: 512,
     reife: "vorbereitet",
@@ -174,6 +190,8 @@ export const GAMES: Game[] = [
     gamePort: 28015,
     extraPorts: [{ port: 28016, transport: "tcp", zweck: "RCON über Websocket" }],
     image: "didstopia/rust-server",
+    /** Aus /app/*.sh: /steamcmd/rust/server/$RUST_SERVER_IDENTITY. */
+    dataDir: "/steamcmd/rust",
     minMemoryMb: 8192,
     installMb: 20_480,
     reife: "vorbereitet",
@@ -190,6 +208,8 @@ export const GAMES: Game[] = [
     transport: "udp",
     gamePort: 8211,
     image: "thijsvanloef/palworld-server-docker",
+    /** Aus init.sh: /palworld/Pal/Saved. */
+    dataDir: "/palworld",
     minMemoryMb: 8192,
     installMb: 8192,
     reife: "vorbereitet",
@@ -204,6 +224,9 @@ export const GAMES: Game[] = [
     gamePort: 26900,
     extraPorts: [{ port: 26900, transport: "tcp", zweck: "Steuerung" }],
     image: "vinanrra/7dtd-server",
+    /** Deckt die deklarierten Volumes ab: .local/share/7DaysToDie
+     * für die Welt, serverfiles für die Installation. */
+    dataDir: "/home/sdtdserver",
     minMemoryMb: 6144,
     installMb: 14_336,
     reife: "vorbereitet",
@@ -217,6 +240,8 @@ export const GAMES: Game[] = [
     transport: "udp",
     gamePort: 7777,
     image: "wolveix/satisfactory-server",
+    /** WorkingDir, und GAMECONFIGDIR zeigt nach /config/gamefiles. */
+    dataDir: "/config",
     minMemoryMb: 6144,
     installMb: 12_288,
     reife: "vorbereitet",

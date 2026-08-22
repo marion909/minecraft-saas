@@ -10,6 +10,7 @@ import {
 } from "./naming.ts";
 import { decodePackets, encodePacket, PacketType } from "./rcon.ts";
 import { buildContainerOptions, READY_PATTERN, type ServerSpec } from "./spec.ts";
+import { GAMES } from "../src/lib/games.ts";
 
 const SPEC: ServerSpec = {
   serverId: "cmst9sik00002kos5j9ew2dh6",
@@ -230,6 +231,55 @@ describe("buildContainerOptions über mehrere Spiele", () => {
     assert.equal(mit.HostConfig?.PortBindings, undefined);
     assert.equal(mit.ExposedPorts, undefined);
     assert.match(String(mit.Image), /minecraft/);
+  });
+
+  it("hängt das Datenverzeichnis dorthin, wo das Image es sucht", () => {
+    // Der Fehler, der lange nicht auffällt: Der Server läuft, die Welt
+    // entsteht — aber in der Container-Schicht statt im Dataset. Weg
+    // beim nächsten Ersetzen, und die Sicherungen wären leer.
+    assert.deepEqual(buildContainerOptions(basis).HostConfig?.Binds, [
+      "/srv/mc/srv-x:/data",
+    ]);
+
+    const terraria = buildContainerOptions({
+      ...basis,
+      game: "terraria",
+      port: 27004,
+    });
+
+    assert.deepEqual(terraria.HostConfig?.Binds, [
+      "/srv/mc/srv-x:/root/.local/share/Terraria/Worlds",
+    ]);
+  });
+
+  it("nennt für jedes Spiel einen absoluten Datenpfad", () => {
+    for (const game of GAMES) {
+      assert.match(game.dataDir, /^\//, game.id);
+    }
+  });
+
+  it("sagt Terraria, welche Welt es laden soll", () => {
+    // Ohne WORLD_FILENAME startet ryshe/terraria in die interaktive
+    // Weltauswahl: Der Container läuft, lauscht aber auf nichts, und der
+    // Start läuft in die Zeitgrenze.
+    const terraria = buildContainerOptions({
+      ...basis,
+      game: "terraria",
+      port: 27004,
+    });
+
+    assert.ok(terraria.Env?.includes("WORLD_FILENAME=welt.wld"));
+
+    // Und ohne -autocreate bricht bootstrap.sh ab, weil die Welt beim
+    // ersten Start noch nicht existiert.
+    assert.ok(terraria.Cmd?.includes("-autocreate"));
+    assert.equal(terraria.Cmd?.[terraria.Cmd.indexOf("-worldname") + 1], "welt");
+  });
+
+  it("gibt Minecraft keinen Cmd", () => {
+    // Das Image bringt seinen eigenen Start mit; ein Cmd davor würde ihn
+    // ersetzen.
+    assert.equal(buildContainerOptions(basis).Cmd, undefined);
   });
 
   it("veröffentlicht bei Spielen ohne Hostname-Routing den Port", () => {

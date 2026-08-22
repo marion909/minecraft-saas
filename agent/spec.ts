@@ -73,6 +73,8 @@ export function buildContainerOptions(
   const veröffentlicht =
     game.routing === "port" && spec.port ? portMappings(game, spec.port) : [];
 
+  const cmd = gameCmd(spec, game);
+
   const exposed: Record<string, Record<string, never>> = {};
   const bindings: Record<string, { HostPort: string }[]> = {};
 
@@ -98,6 +100,10 @@ export function buildContainerOptions(
 
     Env: istMinecraft ? buildEnv(spec, heapMb) : buildGameEnv(spec, game),
 
+    // Nur setzen, wo das Image welche braucht. Minecraft bekommt keinen
+    // Cmd, damit sein Bauplan der alte bleibt.
+    ...(cmd ? { Cmd: cmd } : {}),
+
     // Gehört auf die Container-Ebene, nicht in HostConfig: Die Welt muss
     // beim Stoppen gespeichert werden dürfen.
     StopTimeout: 120,
@@ -119,7 +125,12 @@ export function buildContainerOptions(
 
     HostConfig: {
       NetworkMode: spec.network ?? DEFAULT_NETWORK,
-      Binds: [`${spec.dataPath}:/data`],
+      // Jedes Image legt seine Daten woanders ab; /data ist der Pfad des
+      // itzg-Images. Stand hier für alle Spiele derselbe Pfad, schrieb
+      // etwa Terraria seine Welt in die Container-Schicht: beim nächsten
+      // Ersetzen des Containers weg, und die Sicherungen leer, weil die
+      // das Dataset schnappschussen.
+      Binds: [`${spec.dataPath}:${game.dataDir}`],
 
       ...(Object.keys(bindings).length > 0 || spec.publishRcon
         ? {
@@ -245,7 +256,59 @@ function buildGameEnv(spec: ServerSpec, game: Game): string[] {
     env.ENABLE_RCON = "true";
   }
 
+  Object.assign(env, imageEnv(game));
+
   return Object.entries(env).map(([key, value]) => `${key}=${value}`);
+}
+
+/** Der Dateiname, unter dem Terraria die Welt ablegt. */
+export const TERRARIA_WORLD = "welt.wld";
+
+/**
+ * Was nur ein bestimmtes Image versteht.
+ *
+ * Ohne WORLD_FILENAME startet ryshe/terraria den Server ohne `-world`,
+ * und TShock fragt dann auf der Konsole, welche Welt es sein soll:
+ *
+ *   n           New World
+ *   d <number>  Delete World
+ *
+ * Der Container läuft dabei, lauscht aber auf nichts. Gemessen an
+ * bootstrap.sh im Image.
+ */
+function imageEnv(game: Game): Record<string, string> {
+  if (game.id === "terraria") {
+    return { WORLD_FILENAME: TERRARIA_WORLD };
+  }
+
+  return {};
+}
+
+/**
+ * Startargumente, die das Image nicht selbst setzt.
+ *
+ * Terraria legt die Welt nur an, wenn `-autocreate` dabeisteht — sonst
+ * bricht bootstrap.sh mit "Unable to locate ... and -autocreate flag is
+ * not set" ab. Nachgemessen: Beim zweiten Start lädt es die vorhandene
+ * Welt und legt keine neue an, das Argument darf also stehen bleiben.
+ */
+function gameCmd(spec: ServerSpec, game: Game): string[] | undefined {
+  if (game.id === "terraria") {
+    return [
+      // 1 klein, 2 mittel, 3 groß. Mittel ist die übliche Wahl und
+      // erzeugt rund 7 MB Welt.
+      "-autocreate",
+      "2",
+      "-worldname",
+      spec.subdomain,
+      "-maxplayers",
+      String(spec.maxPlayers),
+      "-port",
+      String(game.gamePort),
+    ];
+  }
+
+  return undefined;
 }
 
 /**
