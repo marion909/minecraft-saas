@@ -1,316 +1,12 @@
-# Gameserver SaaS
+# Gameserver-Panel
 
-Ein Admin legt Konten an, jedes Konto bekommt eigene Spielserver als
-Docker-Container. Tarife bestimmen RAM-, CPU- und Speichergrenzen; ZFS setzt
-sie als harte Quota durch.
+Ein Webpanel, das auf eigener Hardware Spielserver betreibt. Jeder Nutzer
+bekommt eigene Server als Docker-Container, Tarife setzen die Grenzen für
+Arbeitsspeicher, CPU und Platte, ZFS erzwingt sie.
 
-**Läuft.** Panel unter `panel.neuhauser.app`, Server unter
-`<name>.mc.neuhauser.app`, beides aus dem Internet erreichbar.
-
-Die Planung liegt im Repo:
-
-- `INSTALL.html` — Schritt für Schritt von der leeren Platte bis zum ersten Server
-- `PLAN.html` — Architektur, Datenmodell, Sicherheit, Roadmap P0–P8
-- `HOST-SETUP.html` — Runbook für den Linux-Host (Ubuntu, ZFS, Docker)
-
-## Stand
-
-**P0 — Fundament, abgeschlossen und gegen eine laufende Datenbank verifiziert.**
-Durchgespielt: Konto → Anmelden → Dashboard, dazu die Rollenprüfung (ein
-normaler Nutzer wird von `/admin` auf `/dashboard` umgeleitet), die
-Shell-Skripte für die Admin-Rolle und die Kapazitätsanzeige. Der damals
-enthaltene Weg über Registrierung und Bestätigungsmail ist inzwischen
-abgeschaltet, siehe unten.
-
-**P1 — Tarif-Verwaltung, abgeschlossen.** Anlegen, Bearbeiten und Löschen unter
-`/admin/plans`, mit Validierung, Audit-Protokoll und Kapazitätsbezug: Die Liste
-zeigt pro Tarif, wie oft er noch auf den Node passt. Löschen ist gesperrt,
-solange Server darauf laufen.
-
-**P2 — Node-Agent und Docker-Schicht, abgeschlossen.** Eigener Dienst unter
-`agent/`, lauscht nur auf `127.0.0.1` mit Bearer-Token. Legt Container an,
-startet, stoppt, sichert und entfernt sie. Gegen echtes Docker durchgespielt:
-Ein Paper-Server wird provisioniert, wird steuerbar, beantwortet RCON-Befehle,
-wird im laufenden Betrieb gesichert, sauber gestoppt und restlos entfernt.
-
-**P3 — Server-Lebenszyklus im Panel, abgeschlossen.** Nutzer legen unter
-`/servers/new` einen Server an: Name, Adresse, Tarif, Software, Version. Die
-Kapazität des Nodes und das Serverlimit des Tarifs werden vorher geprüft. Die
-Detailseite unter `/servers/:id` zeigt den Zustand, steuert Start/Stopp/Neustart
-und bietet eine RCON-Konsole. Löschen verlangt, dass der Servername abgetippt
-wird.
-
-Der Zustand kommt bei jedem Seitenaufruf frisch vom Agent und wird in die
-Datenbank zurückgeschrieben — die Spalte `status` ist Zwischenspeicher, nicht
-Wahrheit.
-
-**P4 — Erreichbarkeit, abgeschlossen.** mc-router läuft auf Port 25565 und
-leitet anhand des Hostnamens aus dem Minecraft-Handshake an den richtigen
-Container. Kein Server-Container veröffentlicht einen Port. Der Agent trägt
-Routen beim Anlegen ein, entfernt sie beim Löschen und gleicht sie bei jedem
-Start ab — der Router hält sie nur im Speicher.
-
-Die Detailseite prüft die Adresse so, wie ein Minecraft-Client es tut, und
-zeigt Spielerzahl, Version und MOTD.
-
-Steht: `panel.neuhauser.app` und `*.mc.neuhauser.app` zeigen auf den Host,
-Port 25565, 443 und 80 sind weitergeleitet.
-
-Läuft die Domain über Cloudflare, muss der Proxy für **beide** Einträge aus
-sein (graue Wolke). Der kostenlose Proxy versteht nur HTTP und HTTPS —
-Minecraft ist rohes TCP und käme nie an. Und mit Proxy vor `panel` kommt
-Caddy nicht an die ACME-Prüfung heran; das Ergebnis ist ein Fehler 521.
-
-**P5 — Konsole und Live-Daten, abgeschlossen.** Die Detailseite zeigt das
-Server-Log als fortlaufenden Stream und CPU- sowie Speicherauslastung als
-Balken. Beides über Server-Sent Events; der Browser spricht nie direkt mit dem
-Agent, sondern über einen Durchreicher im Panel, der vorher die
-Eigentümerschaft prüft.
-
-Docker bekommt genau einen Stats-Stream pro Container, egal wie viele Tabs
-offen sind. Bricht der Browser ab, endet auch der Stream beim Agent.
-
-**P6 — Dateimanager und Einstellungen, abgeschlossen.** Unter
-`/servers/:id/files` lassen sich Verzeichnisse durchgehen, Textdateien
-bearbeiten, Ordner anlegen und Dateien hochladen — Plugins nach `plugins/`,
-Mods nach `mods/`. Unter `/servers/:id/settings` gibt es einen geführten
-Editor für `server.properties`.
-
-Der Pfad-Schutz ist der kritische Teil und entsprechend abgesichert
-(`agent/paths.ts`, 18 Tests): `..` und absolute Pfade werden abgewiesen, und
-jeder Pfad wird vor der Prüfung über `realpath` aufgelöst — sonst könnte ein
-im Container angelegter Symlink aus dem Serververzeichnis herausführen.
-Gegen einen echten `ln -s / /data/raus` im laufenden Container getestet.
-
-`eula.txt` ist schreibgeschützt, und die RCON- und Port-Einstellungen in
-`server.properties` lassen sich nicht ändern — über sie steuert das Panel
-den Server.
-
-**P7 — Backups, abgeschlossen.** Unter `/servers/:id/backups` lassen sich
-Sicherungen anlegen, zurückspielen und löschen. Der Server bleibt beim
-Sichern erreichbar — er hält nur kurz das Schreiben an, damit die Welt
-vollständig auf der Platte liegt. Rotation nach `plan.maxBackups`: Ist das
-Limit erreicht, verdrängt die neue Sicherung die älteste.
-
-Zurückspielen stoppt den Server, spielt zurück und startet ihn wieder. Es
-verlangt, dass der Servername abgetippt wird — alles seit der Sicherung geht
-dabei verloren.
-
-**Herunterladen und Einspielen.** Jedes Backup lässt sich als `.tar.gz`
-herunterladen — auch von einem ZFS-Node, wo es als Snapshot liegt: Der Agent
-packt es beim Übertragen. Bewusst kein `zfs send`, dessen Strom nur ein
-anderes ZFS wieder einlesen kann; ein Archiv öffnet jeder, und sei es, um
-eine einzelne Datei herauszuholen. Umgekehrt lässt sich ein Archiv wieder
-einspielen — aus einer Sicherung auf der eigenen Platte oder von einem
-anderen Server.
-
-Das ist zugleich die einzige Antwort auf den Plattenausfall: Snapshots liegen
-auf derselben SSD wie die Welt.
-
-Vor dem Einspielen legt der Agent selbst ein Backup des aktuellen Standes an
-(`vor-import-…`), damit der Weg zurück offen bleibt. Beim Durchspielen war
-genau das die Rettung: Ein Archiv, das nur den Eintrag `./` enthielt, kam
-durch die Prüfung und leerte den Testserver vollständig — 29 Einträge auf 0.
-Ein Backup ohne Nutzdaten ist kein Backup, sondern ein Löschbefehl; die
-Prüfung verlangt seitdem mindestens eine Datei mit Inhalt. Metadateien der
-Betriebssysteme zählen dabei nicht, denn im zweiten Anlauf kam dasselbe
-Archiv mit einer AppleDouble-Datei `._.` erneut durch.
-
-Ein hochgeladenes Archiv wird geprüft, **bevor** der Server angefasst wird:
-kein `..` im Pfad, keine absoluten Pfade, nur Dateien und Verzeichnisse —
-symbolische und harte Verweise, Gerätedateien und Pipes fliegen raus. Ein
-Symlink `welt -> /etc`, gefolgt von `welt/passwd`, ist der klassische Weg,
-aus einem Verzeichnis auszubrechen.
-
-Gelesen wird dafür das tar-Format selbst und nicht die Ausgabe von `tar -tv`:
-Die unterscheidet sich zwischen GNU tar und bsdtar in Spaltenzahl und
-Kodierung — GNU schreibt Umlaute als `\303\266`. Namen über 100 Zeichen legt
-tar in einem eigenen Eintrag ab (GNU als Typ `L`, bsdtar als pax); wer den
-überspringt, prüft einen abgeschnittenen Namen, und ein Angreifer macht
-seinen Pfad einfach lang genug. Beide Wege werden aufgelöst, und die Tests
-laufen gegen echte Archive auf beiden Plattformen.
-
-**Wechsel von Version und Server-Software** liegt unter
-`/servers/:id/settings`. Der Container wird dabei ersetzt — Umgebungsvariablen
-und Speichergrenzen schreibt Docker beim Anlegen fest und lassen sich nicht
-nachträglich ändern. Welt, Plugins und Konfigurationsdateien liegen als
-Bind-Mount außerhalb und bleiben unangetastet.
-
-Rückstufungen und Software-Wechsel verlangen eine ausdrückliche Bestätigung
-und weisen auf ein fehlendes Backup hin: Minecraft wandelt die Welt beim
-Hochstufen um, und zurück führt kein unterstützter Weg.
-
-**Konten-Verwaltung.** Die Selbstregistrierung ist abgeschaltet
-(`disableSignUp`) — der Riegel sitzt am Endpunkt, nicht an der Seite. Konten
-legt ein Admin unter `/admin/users` an; sie gelten sofort als bestätigt, es
-gibt keine Mail. Rollenwechsel und Löschen in derselben Liste, mit drei
-Sperren: nicht das eigene Konto, nicht der letzte Admin, und nicht solange
-die Person Server hat — Welten sollen nicht als Nebenwirkung verschwinden.
-
-Beim Anlegen eines Servers werden Name und Adresse **während des Tippens**
-geprüft, nicht erst beim Abschicken. Namen sind je Nutzer eindeutig, ohne
-Rücksicht auf Groß-/Kleinschreibung.
-
-**Node-Verwaltung.** Unter `/admin/nodes` lassen sich Hosts anlegen,
-bearbeiten und entfernen: Adresse und Token des Agents, öffentlicher
-Hostname, Gesamtressourcen und der reservierte Anteil. Ein Knopf prüft die
-Verbindung, bevor gespeichert wird — sonst fiele ein Tippfehler im Token
-erst dem ersten Nutzer auf, und zwar als Fehler, der nach seinem aussieht.
-
-Die Zustände sind der eigentliche Nutzen: **DRAINING** nimmt keine neuen
-Server mehr an, während die vorhandenen weiterlaufen — der Zustand vor
-einer Wartung. Das Verkleinern der Kapazität unter das bereits Vergebene
-wird abgelehnt; das ist fast immer ein Tippfehler, und durchgelassen fiele
-er erst beim OOM-Kill auf.
-
-Dazu die Verteilung: Ein neuer Server geht auf den ONLINE-Node mit dem
-**meisten freien Arbeitsspeicher**, nicht auf den ersten. Vorher wurde nur
-der erste betrachtet — ein zweiter Node wäre damit wirkungslos gewesen,
-sobald der erste voll ist.
-
-**Alle Server.** `/admin/servers` listet die Server sämtlicher Konten mit
-Besitzer, Zustand, Tarif, Node und Belegung, durchsuchbar nach Name,
-Adresse und E-Mail. Von dort führt der Weg in dieselbe Ansicht, die auch
-der Besitzer sieht. Auf fremden Servern steht dann ein Hinweis, wem er
-gehört — auf allen vier Unterseiten, denn Konsole, Dateimanager und
-Löschknopf sehen dort genauso aus wie auf den eigenen.
-
-**Host-Steuerung.** `/admin/host` zeigt Laufzeit, Last, Speicher, Platte
-und Container-Zahl jedes Hosts — und ob ein Neustart aussteht, was Ubuntu
-nach einem Kernel-Update selbst vermerkt.
-
-Neu starten und Herunterfahren laufen von dort aus über den Agent, und der
-hält **erst jeder Welt an**, bevor er schaltet. Das ist der ganze Grund für
-diesen Umweg: Beim Herunterfahren gibt systemd dem Docker-Daemon Sekunden,
-und der reicht sie an die Container weiter. Ein Minecraft-Server braucht
-zum Speichern länger. Wer stattdessen `reboot` tippt, würfelt bei jedem
-Server, ob die Welt beschädigt zurückkommt. Läuft noch ein Backup, lehnt
-der Agent ab — ein unterbrochenes Backup lässt den Server im Zustand
-`save-off` zurück.
-
-Als Sicherung dient der abgetippte Node-Name, kein Bestätigungsdialog: Ein
-„Wirklich?“ klickt man weg, ohne es zu lesen.
-
-**Mehrere Spiele.** Beim Anlegen steht die Spielauswahl ganz oben, und die
-Adresse richtet sich danach: `welt.mc.example.com` für Minecraft,
-`mixe.cs2.example.com` für Counter-Strike 2. Der Katalog liegt in
-[src/lib/games.ts](src/lib/games.ts) — ein neues Spiel ist im Regelfall ein
-Eintrag dort, keine Änderung an Panel oder Agent.
-
-Der entscheidende Unterschied steht im Feld `routing`:
-
-| | Minecraft | alle anderen |
-| --- | --- | --- |
-| Unterscheidung | Hostname aus dem Handshake | eigener Port |
-| Port | 25565 für alle | einer je Server aus dem Node-Bereich |
-| Weg zum Container | mc-router | direkt veröffentlicht |
-| Adresse | `welt.mc.example.com` | `welt.valheim.example.com:27004` |
-
-Das ist keine Entwurfsentscheidung, sondern Protokoll: Minecraft schickt den
-Zielhostnamen im Handshake mit, deshalb kann mc-router am Namen verteilen.
-Source-Spiele, Valheim und die übrigen laufen über UDP und kennen kein
-solches Feld — dort verbindet der Client zu IP und Port. Der DNS-Name ist
-dann Bequemlichkeit, unterschieden wird am Port.
-
-Daraus folgt der Rest: Jeder Node hat einen Portbereich (Voreinstellung
-27000–27099), aus dem `allocatePort()` den niedrigsten freien Block vergibt —
-Valheim und Rust belegen zwei nebeneinander. Eine Eindeutigkeitssperre auf
-(Node, Port) hält auch bei gleichzeitigem Anlegen; zwei Server auf einem Port
-hieße, dass der zweite nicht startet und fremde Spieler beim ersten landen.
-Der Bereich darf 25565 nicht enthalten, sonst nähme ein Spiel irgendwann
-allen Minecraft-Servern den Router-Port weg.
-
-Für jedes angebotene Spiel braucht es einen eigenen DNS-Wildcard
-(`*.cs2.example.com` und so weiter). Die vollständige Liste zeigt das Panel
-beim Bearbeiten eines Nodes.
-
-**Was erprobt ist und was nicht.** Minecraft läuft hier seit Monaten. Für
-Terraria ist der ganze Weg einmal durchgespielt: Container aus dem
-Katalog-Image, Port 7777 innen auf 27000 außen, kein Router-Eintrag, Start in
-fünf Sekunden. Die übrigen Spiele sind als „vorbereitet" eingetragen —
-Adresse, Ports und Ressourcenbedarf stimmen, aber sie sind auf diesem Node
-noch nicht gelaufen. Das Panel schreibt das beim Anlegen dazu, statt es zu
-verschweigen.
-
-Nicht dabei ist **Call of Duty**: Für die aktuellen Titel gibt es seit Black
-Ops 3 keine offiziellen dedizierten Server mehr, und die inoffiziellen
-Projekte lassen sich nicht legal als Image verteilen.
-
-Noch nicht da: Abrechnung (P8).
-
-## Agent
-
-```bash
-pnpm agent        # lauscht auf 127.0.0.1:8787
-```
-
-Endpunkte (alle mit `Authorization: Bearer $AGENT_TOKEN`):
-
-| Methode | Pfad | Zweck |
-| --- | --- | --- |
-| GET | `/health` | Docker erreichbar, Speichertreiber, Netz |
-| GET | `/servers` | alle verwalteten Container |
-| POST | `/servers` | Speicher anlegen, Image ziehen, Container erstellen |
-| GET | `/servers/:id` | Zustand, Bereitschaft, Belegung |
-| POST | `/servers/:id/start` | starten und auf Steuerbarkeit warten |
-| POST | `/servers/:id/stop` | Welt sichern, dann `docker stop` |
-| POST | `/servers/:id/restart` | beides nacheinander |
-| DELETE | `/servers/:id` | Container und Daten entfernen |
-| POST | `/servers/:id/command` | RCON-Befehl absetzen |
-| POST | `/servers/:id/backup` | Snapshot im laufenden Betrieb |
-| GET | `/servers/:id/backups` | vorhandene Snapshots |
-| GET | `/servers/:id/backups/:label/archive` | Backup als tar.gz herunterladen |
-| POST | `/servers/:id/backups/import` | Archiv prüfen und einspielen |
-| GET | `/host` | Laufzeit, Last, Speicher, Platte, ausstehender Neustart |
-| POST | `/host/power` | Server anhalten, dann neu starten oder abschalten |
-| GET | `/tasks/:id` | Fortschritt langer Vorgänge |
-
-Lange Vorgänge liefern sofort einen Task zurück und laufen im Hintergrund;
-der Fortschritt kommt über `/tasks/:id`. Die Task-Liste liegt nur im
-Speicher — der wahre Zustand wird immer aus Docker gelesen.
-
-### Speichertreiber
-
-Auf dem Linux-Host mit ZFS-Pool: harte Quota pro Server, atomare Snapshots,
-Rollback in Sekunden. Ohne ZFS (Entwicklungs-Mac) fällt der Agent auf einfache
-Verzeichnisse zurück, warnt beim Start und meldet `hardQuota: false` — ein
-Server kann dort seine Grenze überschreiten.
-
-**Einhängen verlangt Benutzer-ID 0.** `zfs allow mount` deckt es unter Linux
-nicht ab, und ambientes `CAP_SYS_ADMIN` genügt ZFS ebenfalls nicht — gemessen,
-nicht vermutet. Der Agent ruft dafür `deploy/mc-zfs-helper` über eine
-sudo-Regel auf: drei Verben, nur Datasets unterhalb von `…/mc/srv-`, und vor
-dem `chown` die Prüfung, dass der Einhängepunkt wirklich unter `/srv/mc`
-liegt. Die Dateiverwaltung — der einzige Teil, der Benutzereingaben in Pfade
-übersetzt — bleibt unprivilegiert.
-
-Zum Anlegen selbst braucht das Dienstkonto trotzdem `CAP_SYS_ADMIN`: ZFS
-verlangt für `create` die mount-Fähigkeit als Voraussetzung, auch wenn das
-Einhängen danach separat scheitert.
-
-### Den Host schalten
-
-Dasselbe Muster noch einmal: `deploy/mc-host-helper` kennt genau zwei
-Wörter, `reboot` und `poweroff`, nimmt kein zweites Argument an und läuft
-über eine eigene sudo-Regel. Keine Zeitangabe, keine Nachricht, nichts
-Freies — was dort nicht vorgesehen ist, geht nicht.
-
-Ob der Agent den Host überhaupt schalten darf, wird gemessen statt
-angenommen: `sudo -n -l` fragt die Regel ab, ohne sie auszuführen. Fehlt
-sie, erscheint im Panel kein Knopf, sondern der Grund.
-
-Die RCON-Passwörter für das Anhalten kommen mit der Anfrage vom Panel —
-nur die Datenbank kennt sie, und der Helfer bekommt sie nie zu sehen.
-
-## Tests
-
-```bash
-pnpm test        # 234 Fälle: Kapazität, Node-Wahl, Portvergabe, Archiv-Prüfung, Pfad-Schutz
-pnpm typecheck
-pnpm build
-```
-
-## Auf einem Linux-Host installieren
+Gedacht für den, der einen Rechner hat und Server darauf betreiben will —
+für Freunde, einen Verein, eine kleine Community. Kein Cloud-Dienst, keine
+Anmeldung bei Dritten, keine laufenden Kosten außer Strom.
 
 ```bash
 git clone https://github.com/marion909/minecraft-saas.git
@@ -318,148 +14,304 @@ cd minecraft-saas
 sudo ./deploy/setup.sh
 ```
 
-Richtet alles ein: ZFS-Pool, Docker, Firewall, Dienstkonten, TLS über Caddy,
-mc-router, Datenbank und die beiden systemd-Dienste. Der Pool braucht keine
-eigene Platte — findet das Skript unpartitionierten Platz oder freie
-LVM-Extents, bietet es an, eine Partition daraus zu schneiden.
+Ein Skript, rund fünfzehn Minuten, danach läuft es.
 
-Danach den ersten Admin anlegen. Das Panel kann das nicht, die
-Selbstregistrierung ist ja zu:
+---
+
+## Spiele
+
+| Spiel | Adresse | RAM ab | Platte | Stand |
+| --- | --- | --- | --- | --- |
+| Minecraft (Java) | `<name>.mc.…` | 1,25 GB | 1 GB | im Dauerbetrieb |
+| Terraria | `<name>.terraria.…:<port>` | 1 GB | 1 GB | gestartet und geprüft |
+| Valheim | `<name>.valheim.…:<port>` | 4 GB | 4 GB | gestartet und geprüft |
+| Satisfactory | `<name>.satisfactory.…:<port>` | 6 GB | 12 GB | gestartet und geprüft |
+| Counter-Strike 2 | `<name>.cs2.…:<port>` | 2 GB | 32 GB | eingerichtet |
+| Team Fortress 2 | `<name>.tf2.…:<port>` | 1 GB | 16 GB | eingerichtet |
+| Garry's Mod | `<name>.gmod.…:<port>` | 2 GB | 10 GB | eingerichtet |
+| Rust | `<name>.rust.…:<port>` | 8 GB | 20 GB | eingerichtet |
+| Palworld | `<name>.palworld.…:<port>` | 8 GB | 8 GB | eingerichtet |
+| 7 Days to Die | `<name>.7dtd.…:<port>` | 6 GB | 14 GB | eingerichtet |
+
+**„Gestartet und geprüft"** heißt: Der Server wurde angelegt, ist hochgekommen
+und hat von außen auf sein eigenes Protokoll geantwortet. **„Eingerichtet"**
+heißt: Image, Ports und Datenverzeichnis stimmen, aber es hat noch niemand
+laufen lassen. Rechne dort mit Nacharbeit.
+
+Minecraft ist der Sonderfall: Alle Minecraft-Server teilen sich Port 25565,
+und ein Router liest den Hostnamen aus dem Handshake, um den richtigen
+Container zu finden. Jedes andere Spiel kennt kein solches Feld im Protokoll —
+dort unterscheidet nur der Port, also bekommt jeder Server einen eigenen.
+Deshalb steht bei allen anderen ein Port hinter der Adresse.
+
+Ein neues Spiel ist ein Eintrag in [`src/lib/games.ts`](src/lib/games.ts):
+Image, Ports, Datenverzeichnis, Speicherbedarf.
+
+---
+
+## Was Nutzer damit tun
+
+**Server anlegen.** Spiel wählen, Name, Adresse, Tarif. Ob genug Kapazität
+frei ist, wird vorher geprüft — nicht erst, wenn der Container schon läuft.
+
+**Steuern.** Start, Stopp, Neustart. Bei Minecraft dazu eine RCON-Konsole.
+
+**Zusehen.** Das Server-Log läuft live mit, daneben CPU- und
+Speicherauslastung. Der Browser spricht dabei nie direkt mit dem Host.
+
+**Dateien bearbeiten.** Verzeichnisse durchgehen, Textdateien ändern, Plugins
+und Mods hochladen. Für `server.properties` gibt es einen geführten Editor
+statt eines Textfelds.
+
+**Sichern.** Auf ZFS als Snapshot in Sekunden, sonst als Archiv. Der Server
+bleibt dabei erreichbar; er hält nur kurz das Schreiben an, damit die Welt
+vollständig auf der Platte liegt. Ältere Sicherungen fallen nach der Grenze
+des Tarifs weg.
+
+**Herunterladen und einspielen.** Jede Sicherung lässt sich als `.tar.gz`
+ziehen — auch vom ZFS-Node, wo sie als Snapshot liegt. Umgekehrt lässt sich
+ein Archiv wieder einspielen, aus einer Sicherung auf der eigenen Platte oder
+von einem fremden Server. Vor dem Einspielen legt das Panel selbst eine
+Sicherung des aktuellen Standes an.
+
+---
+
+## Was Betreiber damit tun
+
+**Konten anlegen.** Selbstregistrierung ist zu; ein Admin legt Konten an und
+setzt Rollen. Löschen ist dreifach abgesichert: Es ist gesperrt, solange
+Server am Konto hängen, fragt mit Name **und** Adresse nach — in einer Liste
+mit zwei „Marion" ist der Name kein Unterscheidungsmerkmal — und das eigene
+Konto lässt sich hier gar nicht löschen. Welten verschwinden nicht als
+Nebenwirkung.
+
+**Tarife festlegen.** RAM, CPU, Platte, Spielerzahl, Zahl der Server, Zahl der
+Sicherungen. Die Liste zeigt zu jedem Tarif, wie oft er noch auf den Node
+passt. Ein Tarif, auf dem Server laufen, lässt sich nicht löschen.
+
+**Alle Server sehen.** Über alle Konten hinweg, mit Zustand und Besitzer.
+Fremde Server sind im Panel als solche gekennzeichnet.
+
+**Nodes verwalten.** Mehrere Hosts sind vorgesehen; ein neuer Server landet
+auf dem Node mit dem meisten freien Arbeitsspeicher, auf den er passt.
+
+**Den Host schalten.** Neustart und Herunterfahren aus dem Panel. Der Agent
+hält vorher alle Server ordentlich an, damit keine Welt halb geschrieben
+liegen bleibt.
+
+---
+
+## Voraussetzungen
+
+| | |
+| --- | --- |
+| Betriebssystem | Ubuntu oder Debian, cgroup v2 |
+| Arbeitsspeicher | ab 8 GB; davon bleiben rund 4 GB für System und Dienste |
+| Platte | ein Blockgerät für ZFS — ganze Platte, Partition oder LVM-Volume |
+| Netz | eine Domain und ein Router, in dem sich Ports weiterleiten lassen |
+
+Eine feste IP ist nicht nötig, ein gewöhnlicher Anschluss reicht.
+
+Der Pool braucht **kein eigenes Laufwerk**. Findet das Skript
+unpartitionierten Platz oder freie LVM-Extents, bietet es an, eine Partition
+daraus zu schneiden — genau der Fall nach einer Ubuntu-Standardinstallation,
+wo der Installer das Wurzel-Volume deckelt und den Rest liegen lässt.
+
+Ohne ZFS geht es auch (`SKIP_ZFS=1`), dann aber ohne harte Plattengrenzen und
+mit Archiven statt Snapshots. Für einen Testlauf in Ordnung, für den Betrieb
+nicht.
+
+---
+
+## Installation
+
+```bash
+git clone https://github.com/marion909/minecraft-saas.git
+cd minecraft-saas
+sudo ./deploy/setup.sh
+```
+
+Das Skript fragt nach Domain und E-Mail-Adresse, lässt das Gerät für ZFS
+auswählen und erledigt den Rest: Pakete, ZFS-Pool, Docker, Firewall,
+Dienstkonten, TLS über Caddy, Datenbank, Router und die beiden
+systemd-Dienste. Jeder Schritt prüft, ob er schon erledigt ist — nach einem
+Abbruch einfach erneut starten.
+
+**Der eine gefährliche Schritt** ist der ZFS-Pool: Er löscht das gewählte
+Gerät vollständig. Das Skript listet vorher alle Blockgeräte mit einem Urteil,
+markiert das Wurzeldateisystem rot, weist Eingehängtes ab und verlangt, dass
+`LOESCHEN` eingetippt wird.
+
+Danach den ersten Admin anlegen — das Panel kann das nicht, die Anmeldung ist
+ja zu:
 
 ```bash
 cd /opt/mc-saas/app
 sudo node scripts/create-admin.ts du@example.com "Dein Name"
 ```
 
-Für spätere Code-Änderungen der kurze Weg, der den Host nicht anfasst:
+Einzelheiten, der unbeaufsichtigte Modus und was bei nur einer Platte zu tun
+ist: [deploy/README.md](deploy/README.md).
+
+---
+
+## Zwei Dinge kann kein Skript für dich tun
+
+**DNS.** Für jedes Spiel, das du anbieten willst, ein Wildcard-Eintrag auf die
+öffentliche IP, dazu einer für das Panel:
+
+```
+panel.example.com          A    <deine IP>
+*.mc.example.com           A    <deine IP>
+*.terraria.example.com     A    <deine IP>
+*.valheim.example.com      A    <deine IP>
+…
+```
+
+Läuft die Domain über Cloudflare, muss der Proxy für **alle** Einträge aus
+sein (graue Wolke). Der Proxy versteht HTTP und HTTPS; Spielprotokolle kämen
+nie an. Und mit Proxy vor `panel` erreicht Caddy die ACME-Prüfung nicht — das
+Ergebnis ist ein Fehler 521.
+
+**Portweiterleitung.** Im Router auf den Host:
+
+| Port | Wofür |
+| --- | --- |
+| 80, 443 TCP | Panel und Zertifikate |
+| 25565 TCP | alle Minecraft-Server gemeinsam |
+| 27000–27099 TCP+UDP | ein Port je Server für alle anderen Spiele |
+
+Ausdrücklich **nicht** weiterleiten: 22, 5432, 6379, 8080, 8787, 25575. Die
+lauschen alle nur auf `127.0.0.1`. Eine Weiterleitung auf 8787 gäbe jedem im
+Internet Root auf dem Host.
+
+---
+
+## Betrieb
+
+Code aktualisieren, ohne den Host anzufassen:
 
 ```bash
 sudo /opt/mc-saas/app/deploy/update.sh
 ```
 
-Einzelheiten, der unbeaufsichtigte Modus und was bei nur einer Platte zu tun
-ist, stehen in [deploy/README.md](deploy/README.md).
+Holt den aktuellen Stand, gleicht die Datenbank ans Schema an, baut das Panel
+und startet es durch. Es sieht nach, was sich geändert hat, und macht nur das
+Nötige. Braucht die Datenbank eine Bestätigung, fragt es — und bricht ab,
+statt einen Build gegen ein altes Schema zu starten.
+
+Zustand ansehen:
+
+```bash
+systemctl status mc-agent mc-panel
+journalctl -u mc-panel -f
+```
+
+Ändert sich am **Host** etwas — neue Pakete, andere Kernel-Werte, ein zweiter
+Pool —, dann wieder `setup.sh`. Die `.env` überschreibt es nicht.
+
+---
+
+## Sicherheit
+
+Der Node-Agent hat vollen Zugriff auf Docker und ZFS. Er lauscht deshalb
+ausschließlich auf `127.0.0.1:8787` und verlangt ein Token; das Panel spricht
+über diesen einen Kanal mit ihm, der Browser nie direkt.
+
+Zwei Dinge kann der Agent nicht selbst, weil sie Benutzer-ID 0 verlangen:
+ZFS-Datasets einhängen und den Host schalten. Statt den ganzen Dienst zu
+erheben, bekommen zwei kleine Skripte root über je eine eng gefasste
+sudo-Regel — jede mit fester Verbliste und Pfadprüfung. Die Regel wird vor dem
+Einsetzen mit `visudo -cf` geprüft, denn eine kaputte Datei unter
+`/etc/sudoers.d` sperrt sudo für alle aus, auch für dich.
+
+Container laufen mit `CapDrop: ALL` und bekommen nur zurück, was der Start
+wirklich braucht. Kein Minecraft-Container veröffentlicht einen Port; Spieler
+kommen ausschließlich über den Router herein.
+
+Hochgeladene Archive werden vollständig geprüft, **bevor** ein Server
+angefasst wird: keine Pfade mit `..`, keine absoluten Pfade, nur Dateien und
+Verzeichnisse, und mindestens eine Datei mit Inhalt. Der letzte Punkt kommt
+aus der Praxis — ein leeres Archiv kam zweimal durch die Prüfung und leerte
+den Testserver.
+
+Anmeldungen laufen nach sieben Tagen ab und verlängern sich bei Nutzung.
+
+---
+
+## Was fehlt
+
+Ehrlich, weil es beim Einsatz zählt:
+
+**Mailversand.** `MAIL_TRANSPORT` steht auf `console` — Bestätigungslinks
+landen im Journal statt im Postfach. Für echte Nutzer ist ein Anbieter
+einzutragen.
+
+**Beitrittspasswörter.** Spiele mit eigenem Serverpasswort — Valheim etwa —
+laufen derzeit mit der Vorgabe ihres Images. Wer die kennt, kommt auf jeden
+öffentlich gelisteten Server. Bis das pro Server vergeben wird: von Hand
+setzen.
+
+**Erreichbarkeitsprüfung nur für Minecraft.** Bei anderen Spielen zeigt das
+Panel den Zustand des Containers, nicht die Erreichbarkeit von außen.
+
+**Sicherung außer Haus.** Snapshots liegen auf derselben Platte wie die Welt.
+Sie schützen gegen Griefing und kaputte Plugins, nicht gegen einen
+Plattenausfall. Ein nächtliches `zfs send` auf ein zweites Gerät ist von Hand
+einzurichten.
+
+**Version umstellen nur bei Minecraft.** Bei anderen Spielen lässt sich der
+Container neu aufsetzen, die Version aber nicht wählen.
+
+**Keine Abrechnung.** Tarife setzen Grenzen, sie kosten nichts.
+
+---
 
 ## Entwicklung
 
-### Voraussetzungen
-
-- Node 23.6 oder neuer — Agent und Tests laufen als TypeScript direkt über
-  Node, und erst ab dieser Version werden Typen ohne Flag gestrippt
-- pnpm
-- Docker (für Postgres und Redis)
-
-### Einrichten
-
 ```bash
 pnpm install
-
-cp .env.example .env
-# BETTER_AUTH_SECRET erzeugen und eintragen:
-openssl rand -base64 32
-
-# Postgres und Redis starten
-pnpm dev:services
-
-# Prisma-Client erzeugen und Schema in die Datenbank schreiben
-pnpm db:generate
-pnpm db:push
-
-# Node und Standard-Tarife anlegen
-pnpm db:seed
-
+pnpm db:generate && pnpm db:push && pnpm db:seed
 pnpm dev
 ```
 
-`pnpm db:generate` muss nach jedem Klon und nach jeder Schema-Änderung laufen —
-der erzeugte Client liegt unter `src/generated/` und ist nicht eingecheckt.
-
-### Erstes Konto
-
-Es gibt keine Registrierung, auch nicht in der Entwicklung. Das erste Konto
-kommt über die Shell:
+Braucht Node 23.6 oder neuer — der Agent läuft als TypeScript ohne
+Bauschritt — sowie Postgres und Redis:
 
 ```bash
-node scripts/create-admin.ts du@example.com "Dein Name"
+pnpm dev:services        # docker-compose.dev.yml
 ```
-
-Das Passwort steht danach einmal auf dem Schirm; mit `ADMIN_PASSWORD=…`
-davor lässt sich eines vorgeben. Alle weiteren Konten dann im Panel unter
-`/admin/users`.
-
-Ein bestehendes Konto hochstufen:
 
 ```bash
-node scripts/promote-admin.ts du@example.com
+pnpm test        # 249 Fälle
+pnpm typecheck
+pnpm build
 ```
 
-Beides bewusst über die Shell und nicht über das Panel — sonst wäre die
-Admin-Rolle über die Anwendung selbst erreichbar.
+Die Tests decken ab, was still falsch sein kann: Kapazitätsrechnung, Wahl des
+Nodes, Portvergabe, Prüfung hochgeladener Archive, Pfad-Schutz im
+Dateimanager, Container-Baupläne über alle Spiele.
 
-Beide Skripte laufen direkt über Node, ohne `pnpm` und ohne `tsx`. Auf dem
-Host ist das kein Komfort, sondern nötig: `pnpm` kommt von corepack, und
-corepack legt seinen Cache unter `$HOME` an — für die Dienstkonten
-`/opt/mc-saas`, wo sie nicht schreiben dürfen.
+| Verzeichnis | Inhalt |
+| --- | --- |
+| `src/app` | Panel: Seiten und Server-Actions |
+| `src/lib` | Fachlogik — Spielkatalog, Ports, Kapazität, Agent-Client |
+| `agent/` | Node-Agent: Docker, ZFS, Backups, RCON |
+| `deploy/` | Einrichtung, Aktualisierung, systemd, Compose |
+| `prisma/` | Datenmodell |
 
-### Node-Werte
+Die drei Dokumente [PLAN.html](PLAN.html), [INSTALL.html](INSTALL.html) und
+[HOST-SETUP.html](HOST-SETUP.html) beschreiben Architektur, Einrichtung und
+Host-Runbook. Sie stammen vom 15.08.2026 und damit von vor dem Schritt zu
+mehreren Spielen — die Grundlagen stimmen, die Spielauswahl fehlt darin.
 
-Die Werte stehen in `.env` und beschreiben die Zielhardware:
+Liegt die Arbeitskopie auf einer SMB-Freigabe, dauert `pnpm install` 10–20
+Minuten (pnpm kann nicht hardlinken) und `dev`/`build` laufen mit `--webpack`
+statt Turbopack, dessen Cache `fsync`-Semantik braucht, die SMB nicht
+anbietet. Auf einer lokalen Platte kann der Flag ersatzlos weg.
 
-| Wert | Menge | Herleitung |
-| --- | --- | --- |
-| `NODE_TOTAL_MEMORY_MB` | 49152 | 48 GB verbaut |
-| `NODE_RESERVED_MEMORY_MB` | 12288 | 6 GB ZFS-ARC + 2 GB OS + 4 GB Postgres/Redis/App/Agent |
-| `NODE_TOTAL_CPU_CORES` | 12 | i5-12500, 6 Kerne / 12 Threads |
-| `NODE_TOTAL_DISK_MB` | ~829000 | Rest der einzigen 1-TB-SSD nach 120 GB System, als ZFS-Pool `tank` |
-| `NODE_RESERVED_DISK_MB` | ~166000 | 20 % Reserve, ZFS soll nicht über 85 % gefüllt werden |
+---
 
-Auf dem Host misst `deploy/setup.sh` diese Werte selbst und schreibt sie in
-die `.env`; die Tabelle beschreibt nur, was dabei herauskommt.
+## Lizenz
 
-Damit bleiben **36 GB für Server**, also neun Stück à 4 GB. RAM ist die
-bindende Grenze — die neun Server belegen zusammen keine 100 GB Plattenplatz,
-Platz ist also selbst auf einer einzelnen SSD nicht der Engpass.
-
-## Aufbau
-
-```
-prisma/schema.prisma     Datenmodell (Auth, Plan, Node, Server, Backup, Audit)
-prisma/seed.ts           Node und Standard-Tarife
-scripts/create-admin.ts  Erstes Konto anlegen (das Panel kann es nicht)
-scripts/migrate-games.ts Bestehende Nodes auf mehrere Spiele umstellen
-scripts/promote-admin.ts Bestehendes Konto hochstufen
-src/lib/auth.ts          better-auth, serverseitig
-src/lib/session.ts       requireUser / requireAdmin für Seiten
-src/lib/games.ts         Spielkatalog: Adresse, Ports, Image, Bedarf
-src/lib/ports.ts         Portvergabe für Spiele ohne Hostname-Routing
-src/lib/capacity.ts      Ressourcen-Buchhaltung und Node-Wahl, reine Funktionen
-src/lib/env.ts           Prüfung der Umgebungsvariablen beim Start
-src/app/(auth)/          Anmelden
-src/app/(app)/           Dashboard und Admin, hinter Anmeldung
-src/app/(app)/admin/     Server aller Konten, Konten, Tarife, Nodes, Host
-agent/                   Node-Agent: Docker, ZFS, RCON, Routing
-agent/paths.ts           Pfad-Schutz des Dateimanagers, 18 Tests
-agent/archive.ts         Prüfung hochgeladener Backups, 26 Tests
-agent/restore.ts         Archiv einspielen: prüfen, leeren, entpacken
-agent/host.ts            Zustand des Hosts, Neustart über den Helfer
-deploy/                  setup.sh, update.sh, Units, Compose, Caddyfile
-deploy/mc-zfs-helper     Die ZFS-Schritte, die root verlangen
-deploy/mc-host-helper    reboot und poweroff, sonst nichts
-```
-
-## Hinweis zum Arbeitsverzeichnis
-
-Das Projekt liegt auf einer SMB-Freigabe. Daraus folgen zwei Dinge:
-
-**`pnpm install` dauert 10–20 Minuten.** pnpm kann nicht hardlinken, weil sein
-Store auf der lokalen Platte liegt und das Projekt auf der Freigabe. Jede Datei
-wird einzeln über das Netz kopiert.
-
-**`dev` und `build` laufen mit `--webpack` statt Turbopack.** Turbopacks
-persistenter Cache braucht `fsync`-Semantik, die SMB nicht anbietet — der Build
-bricht sonst mit `Operation not supported (os error 45)` ab. Der Flag steht
-bereits in den Skripten; wenn das Projekt einmal auf einer lokalen Platte oder
-auf dem Linux-Host liegt, kann er ersatzlos weg.
-
-Falls `pnpm dev` Änderungen nicht bemerkt, hilft ein Neustart des Dev-Servers —
-Dateiereignisse kommen über SMB nicht zuverlässig an.
+MIT — siehe [LICENSE](LICENSE).
