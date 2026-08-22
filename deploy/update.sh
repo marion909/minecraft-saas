@@ -52,7 +52,19 @@ datenbank_angleichen() {
 
   push_log="$(mktemp)"
 
-  if pnpm exec prisma db push >"$push_log" 2>&1; then
+  # </dev/null ist hier tragend, nicht Kosmetik.
+  #
+  # Prisma prüft `process.stdin.isTTY`, um zu entscheiden, ob es bei
+  # Warnungen selbst nachfragt. Hängt stdin am Terminal, stellt es die
+  # Frage "Do you want to ignore the warning(s)?" — und die landete
+  # zusammen mit stdout in der Logdatei. Sichtbar war nichts, das Skript
+  # wartete auf die Antwort auf eine unsichtbare Frage.
+  #
+  # Ohne Terminal an stdin wirft Prisma stattdessen den Fehler mit
+  # "Use the --accept-data-loss flag", den der Zweig unten abfängt. Die
+  # Rückfrage stellt dann dieses Skript — sichtbar, mit den Warnungen
+  # davor, und liest die Antwort von /dev/tty.
+  if pnpm exec prisma db push >"$push_log" 2>&1 </dev/null; then
     if grep -q 'already in sync' "$push_log"; then
       skip "Datenbank war schon auf Stand"
     else
@@ -65,15 +77,18 @@ datenbank_angleichen() {
     # auch dazu, obwohl sie nichts löscht — sie könnte nur an
     # vorhandenen Dubletten scheitern.
     printf '\n'
-    sed -n 's/^/     /p' "$push_log" | grep -A3 'data loss' || true
+    # Alles ab der Überschrift zeigen — das sind die eigentlichen
+    # Warnungen. Nur die Zeile mit dem Flag-Hinweis zu zeigen, hieße um
+    # eine Bestätigung zu bitten, ohne zu sagen, wofür.
+    sed -n '/There might be data loss/,$p' "$push_log" | sed 's/^/     /'
     printf '\n'
-    warn "Prisma verlangt für die obige Änderung eine Bestätigung."
+    warn "Prisma verlangt für die obigen Änderungen eine Bestätigung."
 
     if [ -t 0 ]; then
       read -r -p "     Übernehmen? [j/N]: " antwort </dev/tty
       case "$antwort" in
         j|J|y|Y)
-          pnpm exec prisma db push --accept-data-loss >"$push_log" 2>&1 \
+          pnpm exec prisma db push --accept-data-loss >"$push_log" 2>&1 </dev/null \
             && { ok "Schema übernommen"; DB_GEAENDERT=1; } \
             || { sed -n 's/^/     /p' "$push_log"; die "Angleichen fehlgeschlagen."; }
           ;;
