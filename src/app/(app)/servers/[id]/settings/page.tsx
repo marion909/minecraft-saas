@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { PropertiesForm } from "@/components/properties-form";
+import { RecreateContainerForm } from "@/components/recreate-container-form";
 import { VersionForm } from "@/components/version-form";
 import { AgentClient } from "@/lib/agent";
 import { ForeignServerNotice } from "@/components/foreign-server-notice";
@@ -93,6 +94,11 @@ export default async function SettingsPage({
         Container ohne Spiel und ohne Port neu, aus einem CS2-Server
         würde dabei ein Minecraft-Server.
       */}
+      <div className="card" style={{ maxWidth: "44rem" }}>
+        <h2 style={{ fontSize: "1.05rem" }}>Container</h2>
+        <RecreateContainerForm serverId={server.id} />
+      </div>
+
       {spiel?.variants ? (
         <div className="card" style={{ maxWidth: "44rem" }}>
           <h2 style={{ fontSize: "1.05rem" }}>Version und Software</h2>

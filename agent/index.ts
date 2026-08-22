@@ -388,8 +388,31 @@ export function createAgent(config: AgentConfig) {
     const rconPassword = field(body, "rconPassword");
     const wasRunning = before.containerRunning;
 
+    // Wie beim Anlegen: Fehlt die Angabe, ist es Minecraft. Ohne sie
+    // entstand hier ein Minecraft-Container mit Minecraft-Image und ohne
+    // veröffentlichten Port — aus einem Satisfactory-Server wurde beim
+    // Erneuern also etwas ganz anderes.
+    const gameId = (body as { game?: unknown })?.game;
+    const game = gameOrThrow(
+      typeof gameId === "string" && gameId ? gameId : DEFAULT_GAME,
+    );
+
+    const portRaw = (body as { port?: unknown })?.port;
+    const port =
+      typeof portRaw === "number" && Number.isFinite(portRaw) ? portRaw : null;
+
+    if (game.routing === "port" && port === null) {
+      throw new HttpError(
+        400,
+        `${game.name} braucht einen eigenen Port — das Protokoll kennt ` +
+          `keinen Hostnamen, über den sich Server unterscheiden ließen.`,
+      );
+    }
+
     const spec: ServerSpec = {
       serverId,
+      game: game.id,
+      port,
       subdomain,
       serverType,
       mcVersion: field(body, "mcVersion"),
@@ -399,12 +422,14 @@ export function createAgent(config: AgentConfig) {
       rconPassword,
       hostname: before.hostname,
       dataPath: storage.path(serverId),
-      image: config.docker.image,
+      image: game.id === DEFAULT_GAME ? config.docker.image : undefined,
       network: config.docker.network,
       publishRcon: config.publishRcon,
     };
 
-    const image = config.docker.image ?? imageForVersion(spec.mcVersion);
+    const image =
+      spec.image ??
+      (game.id === DEFAULT_GAME ? imageForVersion(spec.mcVersion) : game.image);
     const startAfter = (body as { start?: boolean })?.start !== false;
 
     const task = tasks.start("server.recreate", serverId, async (report) => {
@@ -423,10 +448,14 @@ export function createAgent(config: AgentConfig) {
       await docker.remove(serverId);
       await docker.create(spec);
 
-      report("Route bestätigen");
-      await mcRouter
-        .set(spec.hostname, backendFor(containerName(serverId)))
-        .catch((error: unknown) => report(`Route: ${String(error)}`));
+      // Nur Minecraft läuft über den Router. Ein Eintrag für ein anderes
+      // Spiel schickte Minecraft-Spieler auf dessen Container.
+      if (game.routing === "hostname") {
+        report("Route bestätigen");
+        await mcRouter
+          .set(spec.hostname, backendFor(containerName(serverId)))
+          .catch((error: unknown) => report(`Route: ${String(error)}`));
+      }
 
       if (!startAfter) {
         report("Container bleibt gestoppt");

@@ -80,6 +80,8 @@ export async function changeVersion(
   try {
     await AgentClient.forNode(server.node).recreate({
       serverId: server.id,
+      game: server.game,
+      port: server.port,
       subdomain: server.subdomain,
       serverType,
       mcVersion,
@@ -125,5 +127,81 @@ export async function changeVersion(
   return {
     info:
       "Der Container wird ersetzt und der Server neu gestartet. Die Weltdaten bleiben unangetastet.",
+  };
+}
+
+/**
+ * Setzt den Container neu auf, ohne die Daten anzufassen.
+ *
+ * Nötig, wenn sich am Bauplan etwas geändert hat, das nur beim Anlegen
+ * gilt — veröffentlichte Ports zum Beispiel. Docker kann sie an einem
+ * bestehenden Container nicht ändern, ein Neustart hilft also nicht.
+ *
+ * Der Unterschied zum Löschen und Neuanlegen ist der, auf den es
+ * ankommt: Das Datenverzeichnis bleibt liegen. Bei Satisfactory sind das
+ * fünfzehn Gigabyte, die sonst noch einmal über Steam kämen.
+ */
+export async function recreateContainer(
+  _previous: VersionFormState,
+  formData: FormData,
+): Promise<VersionFormState> {
+  const session = await requireUser();
+  const serverId = String(formData.get("serverId") ?? "");
+
+  const server = await db.server.findUnique({
+    where: { id: serverId },
+    include: { node: true, plan: true },
+  });
+
+  if (
+    !server ||
+    (server.userId !== session.user.id && !isAdmin(session.user.role))
+  ) {
+    return { error: "Diesen Server gibt es nicht." };
+  }
+
+  try {
+    await AgentClient.forNode(server.node).recreate({
+      serverId: server.id,
+      game: server.game,
+      port: server.port,
+      subdomain: server.subdomain,
+      serverType: server.serverType,
+      mcVersion: server.mcVersion,
+      memoryMb: server.appliedMemoryMb,
+      cpuCores: server.appliedCpuCores,
+      maxPlayers: server.plan.maxPlayers,
+      rconPassword: server.rconPassword,
+      start: true,
+    });
+  } catch (error) {
+    return {
+      error:
+        error instanceof AgentError
+          ? `Neu aufsetzen fehlgeschlagen: ${error.message}`
+          : "Neu aufsetzen fehlgeschlagen.",
+    };
+  }
+
+  await db.server.update({
+    where: { id: server.id },
+    data: { status: ServerStatus.STARTING, lastError: null },
+  });
+
+  await audit({
+    action: "server.recreate",
+    userId: session.user.id,
+    serverId: server.id,
+    meta: { grund: "container-erneuert", game: server.game, port: server.port },
+  });
+
+  revalidatePath(`/servers/${serverId}`);
+  revalidatePath(`/servers/${serverId}/settings`);
+
+  return {
+    info:
+      "Der Container wird neu aufgesetzt. Die Daten bleiben liegen; " +
+      "bei Spielen, die ihre Dateien über Steam holen, kann der erste " +
+      "Start trotzdem dauern.",
   };
 }

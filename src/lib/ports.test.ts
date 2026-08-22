@@ -165,3 +165,55 @@ describe("Katalog", () => {
     assert.throws(() => gameOrThrow("halflife3"), /Unbekanntes Spiel/);
   });
 });
+
+describe("Portabbildung über den ganzen Katalog", () => {
+  it("gibt derselben Containernummer nie zwei Außenports", () => {
+    // Genau das war bei 7 Days to Die der Fall: 26900 stand einmal als
+    // gamePort (udp) und einmal als extraPort (tcp), und die Zuteilung
+    // legte sie auf zwei verschiedene Außenports. Ein Client verbindet
+    // sich aber zu einer Adresse mit einer Nummer.
+    for (const game of GAMES) {
+      if (game.routing !== "port") continue;
+
+      const proNummer = new Map<number, Set<number>>();
+
+      for (const m of portMappings(game, 27000)) {
+        const bisher = proNummer.get(m.containerPort) ?? new Set<number>();
+        bisher.add(m.hostPort);
+        proNummer.set(m.containerPort, bisher);
+      }
+
+      for (const [containerPort, hostPorts] of proNummer) {
+        assert.equal(
+          hostPorts.size,
+          1,
+          `${game.id}: ${containerPort} liegt außen auf ${[...hostPorts].join(" und ")}`,
+        );
+      }
+    }
+  });
+
+  it("belegt nie mehr Außenports, als der Block groß ist", () => {
+    for (const game of GAMES) {
+      if (game.routing !== "port") continue;
+
+      const außen = new Set(portMappings(game, 27000).map((m) => m.hostPort));
+      assert.ok(
+        außen.size <= blockSize(game),
+        `${game.id}: ${außen.size} Außenports bei Blockgröße ${blockSize(game)}`,
+      );
+    }
+  });
+
+  it("hält Satisfactory auf einer Nummer für Spiel und API", () => {
+    // Die Server-API läuft über TCP auf derselben 7777 wie das Spiel über
+    // UDP. Ohne TCP kann der Client den Server nicht einmal hinzufügen.
+    const sf = gameOrThrow("satisfactory");
+    const m = portMappings(sf, 27000);
+
+    assert.deepEqual(
+      m.map((x) => `${x.containerPort}/${x.transport}→${x.hostPort}`).sort(),
+      ["7777/tcp→27000", "7777/udp→27000"],
+    );
+  });
+});

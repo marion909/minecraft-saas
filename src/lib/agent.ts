@@ -299,6 +299,10 @@ export class AgentClient {
    */
   recreate(input: {
     serverId: string;
+    /** Ohne das baut der Agent einen Minecraft-Container. */
+    game: string;
+    /** Zugeteilter Host-Port; null bei Minecraft. */
+    port: number | null;
     subdomain: string;
     serverType: string;
     mcVersion: string;

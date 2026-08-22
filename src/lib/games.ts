@@ -220,9 +220,15 @@ export const GAMES: Game[] = [
     name: "7 Days to Die",
     slug: "7dtd",
     routing: "port",
-    transport: "udp",
+    // Als zwei Einträge bekam 26900 zwei verschiedene Außenports — einmal
+    // UDP, einmal TCP. Ein Client verbindet sich aber zu einer Adresse
+    // mit einer Nummer. "beide" hält sie zusammen.
+    transport: "beide",
     gamePort: 26900,
-    extraPorts: [{ port: 26900, transport: "tcp", zweck: "Steuerung" }],
+    extraPorts: [
+      { port: 26901, transport: "udp", zweck: "Spieldaten" },
+      { port: 26902, transport: "udp", zweck: "Spieldaten" },
+    ],
     image: "vinanrra/7dtd-server",
     /** Deckt die deklarierten Volumes ab: .local/share/7DaysToDie
      * für die Welt, serverfiles für die Installation. */
@@ -237,7 +243,15 @@ export const GAMES: Game[] = [
     name: "Satisfactory",
     slug: "satisfactory",
     routing: "port",
-    transport: "udp",
+    // 7777 trägt beides: das Spiel über UDP und die Server-API über TCP.
+    // Letztere ist kein Zubehör — der Client fügt den Server über sie
+    // hinzu und beansprucht ihn. Ohne TCP taucht er gar nicht erst auf.
+    // Aus dem Serverlog: "Server API listening on '[::]:7777'".
+    //
+    // Der Nachrichtenport 8888 steht bewusst nicht dabei: Das Startskript
+    // setzt ihn noch, aber der Server lauscht seit 1.0 nur auf 7777. Ein
+    // Eintrag hier würde bloß einen Außenport verbrauchen.
+    transport: "beide",
     gamePort: 7777,
     image: "wolveix/satisfactory-server",
     /** WorkingDir, und GAMECONFIGDIR zeigt nach /config/gamefiles. */
