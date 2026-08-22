@@ -55,10 +55,14 @@ export default async function ServerPage({
   // Der Erreichbarkeitstest spricht das Minecraft-Protokoll. Für andere
   // Spiele gibt es kein Gegenstück, das ohne eigenen Client auskäme —
   // dort bleibt es beim Zustand des Containers.
+  //
+  // Das Ergebnis muss von "gar nicht geprüft" unterscheidbar sein.
+  // Sonst zeigt die Seite denselben Satz für zwei sehr verschiedene
+  // Lagen: einmal "geprüft, antwortet nicht", einmal "nie geprüft".
+  const prüfbar = game?.routing === "hostname";
+
   const reachability =
-    game?.routing === "hostname" &&
-    live.agentReachable &&
-    live.status === ServerStatus.RUNNING
+    prüfbar && live.agentReachable && live.status === ServerStatus.RUNNING
       ? await AgentClient.forNode(server.node)
           .ping(server.id)
           .catch(() => null)
@@ -133,11 +137,31 @@ export default async function ServerPage({
               </table>
             </div>
           </>
-        ) : live.status === ServerStatus.RUNNING ? (
+        ) : prüfbar && live.status === ServerStatus.RUNNING ? (
           <p className="notice notice-warn">
             Der Server läuft, ist unter dieser Adresse aber nicht erreichbar
             {reachability?.reason ? ` (${reachability.reason})` : ""}. Meist
             fehlt der DNS-Eintrag für <code>*.{game?.slug}.{server.node.baseDomain}</code>.
+          </p>
+        ) : live.status === ServerStatus.RUNNING ? (
+          /*
+            Hier stand bis eben dieselbe Warnung wie eine Zeile darüber —
+            obwohl für dieses Spiel nie geprüft wurde. Eine ausgelassene
+            Messung als Fehlschlag anzuzeigen, schickt Leute auf die
+            Suche nach einem DNS-Eintrag, der längst da ist.
+          */
+          <p className="hint">
+            Ob der Server von außen antwortet, prüft das Panel hier nicht:
+            Der Test spricht das Minecraft-Protokoll, und {game?.name} kennt
+            kein Gegenstück, das ohne eigenen Client auskäme. Zum Verbinden
+            gehören zwei Dinge, die außerhalb dieses Panels liegen — der
+            DNS-Eintrag{" "}
+            <code>
+              *.{game?.slug}.{server.node.baseDomain}
+            </code>{" "}
+            und die Weiterleitung von Port{" "}
+            {game && server.port ? portsOf(game, server.port).join(" und ") : server.port}{" "}
+            im Router.
           </p>
         ) : (
           <p className="hint">
