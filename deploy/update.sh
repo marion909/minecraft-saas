@@ -40,6 +40,8 @@ cd "$APP_DIR"
 # brauchte und abgebrochen wurde. Dann hätte sich schema.prisma seither
 # nicht mehr geändert, und er käme nie wieder dran. `db push` meldet von
 # selbst "already in sync", wenn nichts zu tun ist; das kostet nichts.
+DB_GEAENDERT=0
+
 datenbank_angleichen() {
   # Das Angleichen läuft hier und nicht als Hinweis zum Abtippen.
   # Grund: Die .env gehört root, weil Geheimnisse darin stehen — ein
@@ -55,6 +57,7 @@ datenbank_angleichen() {
       skip "Datenbank war schon auf Stand"
     else
       ok "Schema übernommen"
+      DB_GEAENDERT=1
     fi
   elif grep -q 'Use the --accept-data-loss flag' "$push_log"; then
     # Prisma verlangt eine Bestätigung. Sie gilt nicht nur echten
@@ -71,18 +74,20 @@ datenbank_angleichen() {
       case "$antwort" in
         j|J|y|Y)
           pnpm exec prisma db push --accept-data-loss >"$push_log" 2>&1 \
-            && ok "Schema übernommen" \
+            && { ok "Schema übernommen"; DB_GEAENDERT=1; } \
             || { sed -n 's/^/     /p' "$push_log"; die "Angleichen fehlgeschlagen."; }
           ;;
         *)
-          warn "Übersprungen. Das Panel läuft mit dem alten Schema weiter,"
-          warn "neue Felder bleiben leer. Nachholen mit:"
-          warn "  sudo $APP_DIR/deploy/update.sh"
+          # Hier wird abgebrochen und nicht weitergebaut. Der neue Code
+          # erwartet Spalten, die es in der Datenbank nicht gibt — das
+          # Panel beantwortete danach jede Seite mit einem Serverfehler.
+          # Solange nichts gebaut und nichts neu gestartet wurde, läuft
+          # der bisherige Build unverändert weiter.
+          die "Abgleich abgelehnt — es wurde nichts gebaut, der laufende Build bleibt."
           ;;
       esac
     else
-      warn "Kein Terminal — bitte einmal von Hand ausführen:"
-      warn "  sudo $APP_DIR/deploy/update.sh"
+      die "Für die Rückfrage fehlt ein Terminal. Einmal von Hand: sudo $APP_DIR/deploy/update.sh"
     fi
   else
     sed -n 's/^/     /p' "$push_log"
@@ -109,6 +114,20 @@ if [ "$before" = "$after" ]; then
   # Trotzdem nachsehen: Ein Abgleich, der beim letzten Mal an einer
   # Bestätigung hing, wäre sonst für immer offen.
   datenbank_angleichen
+
+  [ "$DB_GEAENDERT" = "1" ] || exit 0
+
+  # Die Datenbank hat sich gerade geändert, der laufende Build stammt von
+  # davor. Einmal durchbauen, statt es dem nächsten Aufruf zu überlassen.
+  warn "Datenbank angeglichen — Panel wird neu gebaut."
+  pnpm build >/dev/null
+  chown -R root:mcsaas "$APP_DIR"
+  chmod -R g+rX "$APP_DIR"
+  chown -R mcpanel:mcsaas "$APP_DIR/.next"
+  systemctl restart mc-panel mc-agent
+  sleep 3
+  systemctl is-active --quiet mc-panel || die "mc-panel läuft nicht — journalctl -u mc-panel -n 50"
+  ok "Panel neu gebaut und gestartet"
   exit 0
 fi
 
