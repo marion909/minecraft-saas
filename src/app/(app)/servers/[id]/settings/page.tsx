@@ -37,8 +37,13 @@ export default async function SettingsPage({
 
   const agent = AgentClient.forNode(server.node);
 
+  // server.properties ist eine Minecraft-Datei. Bei allen anderen Spielen
+  // schlaegt der Aufruf zuverlaessig fehl, und die Seite versprach dann,
+  // die Datei entstehe beim ersten Start — sie entsteht nie.
   const [properties, backups] = await Promise.all([
-    agent.getProperties(server.id).catch(() => null),
+    spiel?.id === "minecraft"
+      ? agent.getProperties(server.id).catch(() => null)
+      : Promise.resolve(null),
     agent.listBackups(server.id).catch(() => null),
   ]);
 
@@ -58,7 +63,7 @@ export default async function SettingsPage({
         <ForeignServerNotice owner={server.user} />
       ) : null}
 
-      {!properties ? (
+      {spiel?.id !== "minecraft" ? null : !properties ? (
         <p className="notice notice-warn">
           <code>server.properties</code> ist noch nicht lesbar. Die Datei
           entsteht beim ersten Start des Servers.
