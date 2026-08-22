@@ -6,6 +6,7 @@ import { ServerStatus, ServerType } from "@/generated/prisma/enums";
 import { AgentClient, AgentError } from "@/lib/agent";
 import { audit } from "@/lib/audit";
 import { db } from "@/lib/db";
+import { findGame } from "@/lib/games";
 import { isDowngrade } from "@/lib/mc-version";
 import { isAdmin } from "@/lib/roles";
 import { requireUser } from "@/lib/session";
@@ -34,6 +35,20 @@ export async function changeVersion(
     (server.userId !== session.user.id && !isAdmin(session.user.role))
   ) {
     return { error: "Diesen Server gibt es nicht." };
+  }
+
+  // Der Weg dahinter ist Minecraft: recreate im Agent baut den Container
+  // ohne Spiel und ohne Port neu. Bei einem CS2-Server käme ein
+  // Minecraft-Container heraus, ohne veröffentlichten Port. Das Formular
+  // wird für diese Spiele gar nicht erst angezeigt; hier steht die Sperre
+  // trotzdem, weil ein abgeschicktes Formular nichts beweist.
+  const spiel = findGame(server.game);
+  if (!spiel?.variants) {
+    return {
+      error:
+        `Version und Software lassen sich bei ${spiel?.name ?? "diesem Spiel"} ` +
+        `noch nicht umstellen.`,
+    };
   }
 
   const mcVersion = String(formData.get("mcVersion") ?? "").trim() || "LATEST";

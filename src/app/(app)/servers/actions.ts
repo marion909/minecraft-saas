@@ -143,13 +143,21 @@ export async function createServer(
 
   const planId = String(formData.get("planId") ?? "");
   const gameId = String(formData.get("game") ?? "").trim() || DEFAULT_GAME;
-  const serverType = String(formData.get("serverType") ?? "");
   const mcVersion = String(formData.get("mcVersion") ?? "").trim() || "LATEST";
 
   const fields: Record<string, string> = {};
 
   const game = findGame(gameId);
   if (!game) fields.game = "Dieses Spiel gibt es nicht.";
+
+  // Spiele ohne Varianten zeigen das Feld gar nicht an — das Formular
+  // schickt dann nichts, und der leere Wert wäre kein gültiger Enum-Wert.
+  // Prisma lehnt ihn ab, bevor es die Datenbank auch nur sieht, der Agent
+  // ebenso mit 400. Der Wert steht in der Spalte, wird für diese Spiele
+  // aber nirgends ausgewertet; siehe der Kommentar an Server.serverType.
+  const serverType = game?.variants
+    ? String(formData.get("serverType") ?? "")
+    : ServerType.PAPER;
 
   const parsedName = checkServerName(String(formData.get("name") ?? ""));
   if (!parsedName.ok) fields.name = parsedName.reason;
@@ -173,8 +181,9 @@ export async function createServer(
     // Lieber hier ablehnen als den Server anlegen und zusehen, wie er
     // beim Start am Arbeitsspeicher scheitert.
     fields.planId =
-      `${game.name} braucht mindestens ${game.minMemoryMb} MB, ` +
-      `„${plan.name}“ bietet ${plan.memoryMb} MB.`;
+      `${game.name} braucht mindestens ${Math.round(game.minMemoryMb / 1024)} GB ` +
+      `Arbeitsspeicher, „${plan.name}“ bietet ` +
+      `${Math.round(plan.memoryMb / 1024)} GB.`;
   } else if (game && plan.diskMb < game.installMb) {
     fields.planId =
       `${game.name} belegt allein für die Installation rund ` +
@@ -331,7 +340,18 @@ export async function createServer(
           "Bitte noch einmal versuchen.",
       };
     }
-    throw error;
+
+    // Alles Weitere ist unerwartet. Zu werfen hieße: keine Meldung im
+    // Formular, nur ein Sprung an den Seitenanfang und ein Formular, das
+    // aussieht, als hätte es nichts getan. Lieber eine Zeile, die sagt,
+    // wo der Grund steht.
+    console.error("Server anlegen fehlgeschlagen:", error);
+
+    return {
+      error:
+        "Der Server konnte nicht angelegt werden. Der Grund steht im " +
+        "Panel-Protokoll (journalctl -u mc-panel).",
+    };
   }
 
   const hostname = serverHostname(game, subdomain.value, node.baseDomain);

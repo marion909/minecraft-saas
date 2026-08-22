@@ -6,6 +6,7 @@ import { VersionForm } from "@/components/version-form";
 import { AgentClient } from "@/lib/agent";
 import { ForeignServerNotice } from "@/components/foreign-server-notice";
 import { db } from "@/lib/db";
+import { findGame } from "@/lib/games";
 import { isAdmin } from "@/lib/roles";
 import { requireUser } from "@/lib/session";
 
@@ -31,6 +32,8 @@ export default async function SettingsPage({
   ) {
     notFound();
   }
+
+  const spiel = findGame(server.game);
 
   const agent = AgentClient.forNode(server.node);
 
@@ -78,15 +81,34 @@ export default async function SettingsPage({
         Server sich selbst unerreichbar machen.
       </p>
 
-      <div className="card" style={{ maxWidth: "44rem" }}>
-        <h2 style={{ fontSize: "1.05rem" }}>Version und Software</h2>
-        <VersionForm
-          serverId={server.id}
-          currentVersion={server.mcVersion}
-          currentType={server.serverType}
-          hasBackups={(backups?.backups.length ?? 0) > 0}
-        />
-      </div>
+      {/*
+        Nur für Spiele mit Varianten — bei allen anderen gäbe es hier
+        Paper, Vanilla und Purpur zur Auswahl, die es dort nicht gibt.
+        Der Weg dahinter ist ebenfalls noch Minecraft: recreate baut den
+        Container ohne Spiel und ohne Port neu, aus einem CS2-Server
+        würde dabei ein Minecraft-Server.
+      */}
+      {spiel?.variants ? (
+        <div className="card" style={{ maxWidth: "44rem" }}>
+          <h2 style={{ fontSize: "1.05rem" }}>Version und Software</h2>
+          <VersionForm
+            serverId={server.id}
+            currentVersion={server.mcVersion}
+            currentType={server.serverType}
+            variants={spiel.variants}
+            hasBackups={(backups?.backups.length ?? 0) > 0}
+          />
+        </div>
+      ) : (
+        <div className="card" style={{ maxWidth: "44rem" }}>
+          <h2 style={{ fontSize: "1.05rem" }}>Version</h2>
+          <p className="hint">
+            {spiel?.name ?? "Dieses Spiel"} lädt beim Start die aktuelle
+            Fassung — eine Auswahl gibt es hier noch nicht. Server-Software
+            wie Paper oder Fabric ist eine Minecraft-Frage.
+          </p>
+        </div>
+      )}
     </>
   );
 }

@@ -10,23 +10,18 @@ import {
 } from "@/app/(app)/servers/[id]/settings/actions";
 import { isDowngrade, softwareSwitchWarning } from "@/lib/mc-version";
 
-const SOFTWARE = [
-  { value: "PAPER", label: "Paper" },
-  { value: "VANILLA", label: "Vanilla" },
-  { value: "PURPUR", label: "Purpur" },
-  { value: "FABRIC", label: "Fabric" },
-  { value: "FORGE", label: "Forge" },
-];
-
 export function VersionForm({
   serverId,
   currentVersion,
   currentType,
+  variants,
   hasBackups,
 }: {
   serverId: string;
   currentVersion: string;
   currentType: string;
+  /** Aus dem Spielkatalog — nicht noch einmal hier aufgezählt. */
+  variants: { id: string; label: string; hint?: string }[];
   hasBackups: boolean;
 }) {
   const router = useRouter();
@@ -65,9 +60,9 @@ export function VersionForm({
             value={type}
             onChange={(event) => setType(event.target.value)}
           >
-            {SOFTWARE.map((item) => (
-              <option key={item.value} value={item.value}>
-                {item.label}
+            {variants.map((variante) => (
+              <option key={variante.id} value={variante.id}>
+                {variante.label}
               </option>
             ))}
           </select>
